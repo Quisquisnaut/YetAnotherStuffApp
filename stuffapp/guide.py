@@ -75,33 +75,42 @@ The year of acquisition is a 4-digit year such as 2023."""),
 
     ("Item types", """\
 A type is the set of fields its items have. Every item has exactly one
-type. Types that come with the app:
+type. These types come with the app (their fields are listed in the guide
+"Fields of the types that come with the app"):
 
 - Generic: every standard detail (see "Items").
 - Book, Furniture, Device, Gadget, Media, Plant, Appliance, Shoe,
   Clothes, Vehicle, Card, Key: the useful standard details plus their own
-  fields, e.g. Author and ISBN for a Book, Size and Color for a Shoe,
-  Plate number for a Vehicle, Opens for a Key.
+  fields, e.g. Author, Publisher, Year published and Bookshelf for a Book,
+  Color and Size for Furniture, Specs for a Device.
 
 The Card type is for ID, bank, loyalty or membership cards. Never store a
 PIN, a password or a full card number: only the last digits.
 
-Your own types: Home > Item types (text menus: main menu > Item types).
-- Create a type: give it a name and start from no fields or from a copy
-  of another type.
+Every type can be changed, also the ones that come with the app:
+Home > Item types (text menus: main menu > Item types), then tap a type.
+- Rename the type.
 - Add a field: a standard one (Price, Brand...) or your own (for example
   "Players" or "Warranty until"), one line or several lines.
 - Move fields up or down, rename your own fields (values are kept) or
   switch them between one line and several lines.
 - Remove a field: asks for confirmation and tells you how many items have
   a value for it; those values are deleted (a backup can bring them back).
-- Delete a type: only when no item has it any more.
+- Make a copy: a new type that starts with the same fields.
+- Delete a type: only when no item has it any more. Generic cannot be
+  deleted (it is used when an item's type is missing).
+- Reset: a changed type that came with the app can go back to how it came
+  with the app, and a deleted one can be restored (Item types > Restore a
+  deleted type).
+- Create a type: give it a name and start from no fields or from a copy
+  of another type.
 
-The types that come with the app cannot be changed: make a copy and
-change the copy. Field names must start with a letter, can be up to 40
-characters and cannot repeat a standard detail (Name, Price, Brand...).
-If an item has a value for a field its type no longer has, the value is
-still shown so nothing is hidden; you can clear it."""),
+Field names must start with a letter, can be up to 40 characters and
+cannot repeat a standard detail (Name, Price, Brand...). If an item has a
+value for a field its type no longer has, the value is still shown so
+nothing is hidden; you can clear it."""),
+
+    ("Fields of the types that come with the app", None),
 
     ("Photos", """\
 Photos must be JPEG (.jpg / .jpeg). With the Pillow library installed
@@ -194,5 +203,18 @@ def topic_titles():
     return [title for title, _ in TOPICS]
 
 
+def bundled_fields_text():
+    """The fields of every bundled type, as they come with the app."""
+    from .storage import bundled_types
+
+    parts = ["Every type also has a Name and photos. These are the fields as they\n"
+             "come with the app; you can change them (see \"Item types\")."]
+    for item_type in bundled_types():
+        labels = ", ".join(label for _key, label, _kind in item_type["fields"])
+        parts.append("%s: %s." % (item_type["name"], labels))
+    return "\n\n".join(parts)
+
+
 def topic_text(index):
-    return TOPICS[index][1]
+    text = TOPICS[index][1]
+    return bundled_fields_text() if text is None else text

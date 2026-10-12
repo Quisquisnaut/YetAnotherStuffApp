@@ -53,12 +53,14 @@ English guides to every feature.
     seller, made in, year of acquisition, issues and notes.
   - Bundled types: **Book, Furniture, Device, Gadget, Media, Plant, Appliance, Shoe,
     Clothes, Vehicle, Card, Key**. Each has the useful standard details plus its own
-    fields (for example Author/ISBN for a Book, Plate number/Mileage for a Vehicle,
-    Opens/Who has copies for a Key). Bundled types can't be changed, but you can copy one.
-  - **Your own types**: create them (empty or as a copy of another type), rename them,
-    add standard fields or your own fields (one line or several lines), move, rename
-    or remove fields, and delete a type when no item uses it. Removing a field or
-    changing an item's type asks first and tells you which values will be deleted.
+    fields (see "Fields of the bundled types" below).
+  - **Every type can be changed**, the bundled ones too: rename it, add standard fields
+    or your own fields (one line or several lines), move, rename or remove fields, make a
+    copy, and delete a type when no item uses it (Generic can't be deleted: it is used
+    when an item's type is missing). A changed bundled type can be **reset** to how it
+    came with the app, and a deleted one can be **restored**. You can also create new types
+    (empty or as a copy of another type). Removing a field or changing an item's type asks
+    first and tells you which values will be deleted.
   - The Card type is meant for ID, bank or membership cards: never store PINs,
     passwords or full card numbers, only the last digits.
 * **Clone Item**: duplicates an item, photos included, with a new internal ID
@@ -77,6 +79,26 @@ English guides to every feature.
 * **Trash, safety copies and backups**: see "Data safety" below.
 * **Data folder / iCloud**: in Settings you can keep the data in Pythonista's
   iCloud folder (or any synced folder on a computer).
+
+## Fields of the bundled types
+
+As they come with the app (you can change them):
+
+| Type | Fields (besides Name and photos) |
+|---|---|
+| Generic | Description, Location, Web links, Paid price, Origin, Product code, Serial number, Maker, Brand, Seller, Made in, Year of acquisition, Issues, Notes |
+| Book | Description, Author, Publisher, Year published, Bookshelf, ISBN, Edition, Language, Pages, Genre, Format, Series, Lent to, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Furniture | Description, Location, Color, Size, Material, Weight, Brand, Maker, Product code, Assembly notes, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Device | Description, Location, Brand, Maker, Model, Specs, Product code, Serial number, Operating system, Accessories, Warranty until, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Gadget | Description, Location, Brand, Maker, Model, Specs, Color, Product code, Serial number, Battery, Charger / cable, Warranty until, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Media | Description, Location, Format, Artist / author, Label / studio, Release year, Genre, Platform, Discs, Region, Language, Product code, Lent to, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Plant | Description, Location, Species, Variety, Light, Watering, Soil, Fertilizer, Pot size, Last repotted, Care, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Appliance | Description, Location, Brand, Maker, Model, Specs, Product code, Serial number, Power (W), Energy class, Color, Size, Warranty until, Last service, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Shoe | Description, Location, Brand, Maker, Size, Width, Color, Material, Style, Season, Product code, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Clothes | Description, Location, Brand, Maker, Garment, Size, Color, Material, Season, Care instructions, Product code, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Vehicle | Description, Location, Brand, Maker, Model, Plate number, VIN / frame number, Color, Fuel, Engine, Mileage, Year of manufacture, Insurance, Next service, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Card | Description, Location, Card kind, Issuer, Holder, Card number (last digits), Valid from, Valid until, Phone if lost, Web links, Paid price, Origin, Year of acquisition, Issues, Notes |
+| Key | Description, Location, Opens, Key kind, Key number, Tag / color, Copies, Who has copies, Origin, Paid price, Year of acquisition, Issues, Notes |
 
 ## Item text file format
 
@@ -132,7 +154,8 @@ StuffData/
   exports/
 ```
 
-Your own item types are in `meta/types.json` (bundled types are part of the app).
+Your own item types, the bundled types you changed and the list of bundled types you deleted
+are in `meta/types.json` (the original bundled types are part of the app).
 Each item stores its type ID in `"type"`, standard details as top-level keys, and the
 values of the type's own fields in `"extra"` (`{"Author": "..."}`).
 

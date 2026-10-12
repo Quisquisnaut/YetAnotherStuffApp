@@ -138,11 +138,11 @@ class ScriptedApp(TempStoreTestCase):
 
     def test_create_item_of_a_type(self):
         self.store.create_box("Library")
-        # Type 2 = Book: Name, Description, Location, Author, Publisher, ...
-        self.run_app(["4", "1", "2", "Dune", "", "Shelf", "Frank Herbert"] + [""] * 14 + ["n", "n", "0"])
+        # Type 2 = Book: Name, Description, Author, Publisher, Year published, Bookshelf, ...
+        self.run_app(["4", "1", "2", "Dune", "", "Frank Herbert", "", "1965", "B2"] + [""] * 12 + ["n", "n", "0"])
         item = self.store.list_items()[0]
-        self.assertEqual((item["type"], item["location"], item["extra"]),
-                         ("book", "Shelf", {"Author": "Frank Herbert"}))
+        self.assertEqual((item["type"], item["extra"]),
+                         ("book", {"Author": "Frank Herbert", "Year published": "1965", "Bookshelf": "B2"}))
 
     def test_change_type_asks_before_deleting_values(self):
         box = self.store.create_box("Kitchen")
@@ -170,9 +170,17 @@ class ScriptedApp(TempStoreTestCase):
         self.assertEqual(self.store.get_item(item["id"])["extra"], {})
         self.assertIn("Give them another type first", self.text())
         self.assertTrue(self.store.type_exists(game["id"]))
-        # Bundled types can only be copied.
-        self.run_app(["12", "3", "1", "Novel", "0", "0", "0"])
+        # Bundled types can be copied, changed, reset, deleted and restored.
+        self.run_app(["12", "3", "5", "Novel", "0", "0", "0"])
         self.assertEqual(self.store.find_type("novel")["fields"], self.store.get_type("book")["fields"])
+        self.run_app(["12", "3", "1", "Books", "0", "0", "0"])
+        self.assertEqual(self.store.get_type("book")["name"], "Books")
+        self.run_app(["12", "3", "7", "y", "0", "0", "0"])  # Reset
+        self.assertEqual(self.store.get_type("book")["name"], "Book")
+        self.run_app(["12", "3", "6", "y", "0", "0"])  # Delete
+        self.assertFalse(self.store.type_exists("book"))
+        self.run_app(["12", "2", "1", "0", "0"])  # Restore a deleted type
+        self.assertTrue(self.store.type_exists("book"))
 
     def test_errors_are_reported(self):
         self.run_app(["3", "", "", "0"])
@@ -207,9 +215,12 @@ class GuideTests(unittest.TestCase):
         self.assertEqual(item["extra"], {"Model": "DW-18 Pro", "Warranty until": "2027"})
 
     def test_all_topics_in_english_and_non_empty(self):
-        for title, text in guide.TOPICS:
+        for index, title in enumerate(guide.topic_titles()):
+            text = guide.topic_text(index)
             self.assertTrue(title and text.strip())
             text.encode("ascii")
+        fields = guide.topic_text(guide.topic_titles().index("Fields of the types that come with the app"))
+        self.assertIn("Book: Description, Author, Publisher, Year published, Bookshelf", fields)
 
 
 if __name__ == "__main__":

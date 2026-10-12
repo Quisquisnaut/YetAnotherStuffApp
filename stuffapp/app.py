@@ -349,16 +349,26 @@ class App(object):
         while True:
             types = self.store.list_types()
             counts = self.store.type_counts()
+            removed = self.store.removed_bundled_types()
+            extra = ["Create a type"] + (["Restore a deleted type that came with the app"] if removed else [])
             index = self.ui.choose("Item types (a type is the set of fields of its items)",
-                                   ["Create a type"] + [type_label(t, counts) for t in types])
+                                   extra + [type_label(t, counts) for t in types])
             if index is None:
                 return
             if index == 0:
                 created = self._safe(self.create_type)
                 if created:
                     self._safe(self.type_menu, created["id"])
+            elif index < len(extra):
+                self._safe(self.restore_type, removed)
             else:
-                self._safe(self.type_menu, types[index - 1]["id"])
+                self._safe(self.type_menu, types[index - len(extra)]["id"])
+
+    def restore_type(self, removed):
+        index = self.ui.choose("Restore which type?", [t["name"] for t in removed])
+        if index is not None:
+            item_type = self.store.reset_type(removed[index]["id"])
+            self.ui.message("Type '%s' restored." % item_type["name"])
 
     def create_type(self, based_on=None):
         name = self.ui.form("Create a type", [("name", "Name of the type (e.g. Board game)", "")])["name"]
@@ -378,20 +388,21 @@ class App(object):
             item_type = self.store.get_type(type_id)
             fields = ", ".join(label for _k, label, _kind in item_type["fields"]) or "(only the name)"
             count = self.store.type_counts().get(type_id, 0)
+            origin = ""
             if item_type["bundled"]:
-                title = "Type: %s (comes with the app, %d items)\nFields: Name, %s" % (
-                    item_type["name"], count, fields)
-                actions = [("Make a copy to change it", lambda t: self.create_type(based_on=t))]
-            else:
-                title = "Type: %s (%d items)\nFields: Name, %s" % (item_type["name"], count, fields)
-                actions = [
-                    ("Rename type", self.rename_type),
-                    ("Add a standard field", self.add_standard_field),
-                    ("Add an own field", self.add_own_field),
-                    ("Change a field (move, rename, remove)", self.change_field),
-                    ("Make a copy", lambda t: self.create_type(based_on=t)),
-                    ("Delete type", self.delete_type),
-                ]
+                origin = "came with the app, changed, " if item_type["changed"] else "came with the app, "
+            title = "Type: %s (%s%d items)\nFields: Name, %s" % (item_type["name"], origin, count, fields)
+            actions = [
+                ("Rename type", self.rename_type),
+                ("Add a standard field", self.add_standard_field),
+                ("Add an own field", self.add_own_field),
+                ("Change a field (move, rename, remove)", self.change_field),
+                ("Make a copy", lambda t: self.create_type(based_on=t)),
+            ]
+            if type_id != GENERIC:
+                actions.append(("Delete type", self.delete_type))
+            if item_type["changed"]:
+                actions.append(("Reset to how it came with the app", self.reset_type))
             index = self.ui.choose(title, [a[0] for a in actions])
             if index is None:
                 return
@@ -448,6 +459,12 @@ class App(object):
         elif action == 4:
             self.store.set_type_field_kind(type_id, key, "text" if kind == "line" else "line")
 
+    def reset_type(self, type_id):
+        item_type = self.store.get_type(type_id)
+        if self.ui.confirm("Reset '%s' to how it came with the app? Values of fields it no longer has "
+                           "stay in the items." % item_type["name"]):
+            self.store.reset_type(type_id)
+
     def delete_type(self, type_id):
         item_type = self.store.get_type(type_id)
         count = len(self.store.type_items(type_id))
@@ -456,7 +473,8 @@ class App(object):
                             "Change type); only unused types can be deleted." % (count, item_type["name"]),
                             title="Cannot delete")
             return None
-        if self.ui.confirm("Delete the type '%s'?" % item_type["name"]):
+        restore = " (it can be restored from the Item types menu)" if item_type["bundled"] else ""
+        if self.ui.confirm("Delete the type '%s'?%s" % (item_type["name"], restore)):
             self.store.delete_type(type_id)
             return "deleted"
         return None

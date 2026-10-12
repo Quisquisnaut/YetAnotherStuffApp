@@ -858,7 +858,19 @@ class TypesScreen(TableScreen):
                    "on_tap": functools.partial(self.app.push_type, item_type["id"])}
             (bundled if item_type.get("bundled") else own).append(row)
         own.append({"title": "Create a type", "color": ACCENT, "on_tap": self.on_add_row, "accessory": "none"})
-        self.show([("Your types", own), ("Come with the app (copy one to change it)", bundled)])
+        if store.removed_bundled_types():
+            bundled.append({"title": "Restore a deleted type", "color": ACCENT, "on_tap": self.on_restore,
+                            "accessory": "none"})
+        self.show([("Your types", own), ("Came with the app (you can change them)", bundled)])
+
+    @task
+    def on_restore(self):
+        removed = self.app.store.removed_bundled_types()
+        index = choose("Restore which type?", [t["name"] for t in removed])
+        if index is not None:
+            self.app.store.reset_type(removed[index]["id"])
+            self.app.refresh_all()
+            hud("Restored")
 
     def on_add_row(self):
         self.on_add(None)
@@ -869,7 +881,7 @@ class TypesScreen(TableScreen):
 
 
 class TypeScreen(TableScreen):
-    """The fields of one type. Types that come with the app are read-only."""
+    """The fields of one type (any type can be changed)."""
 
     def __init__(self, app, type_id):
         TableScreen.__init__(self, app, "Type")
@@ -885,25 +897,20 @@ class TypeScreen(TableScreen):
             return
         item_type = store.get_type(self.type_id)
         self.name = item_type["name"]
-        bundled = item_type.get("bundled")
         kinds = {"line": "one line", "text": "several lines", "links": "web links",
                  "price": "price in \u20ac", "year": "year"}
         rows = [{"title": "Name", "subtitle": "always there", "color": MUTED}]
         for key, label, kind in item_type["fields"]:
-            row = {"title": label, "subtitle": kinds.get(kind, kind)
-                   + ("" if key.startswith(EXTRA_PREFIX) else "  \u00b7  standard field")}
-            if bundled:
-                row["color"] = MUTED
-            else:
-                row["on_tap"] = functools.partial(self.on_field, key, label)
-                row["accessory"] = "none"
-            rows.append(row)
+            rows.append({"title": label, "subtitle": kinds.get(kind, kind)
+                         + ("" if key.startswith(EXTRA_PREFIX) else "  \u00b7  standard field"),
+                         "on_tap": functools.partial(self.on_field, key, label), "accessory": "none"})
         rows.append({"title": "Photos", "subtitle": "always there", "color": MUTED})
-        if not bundled:
-            rows.append({"title": "Add a field", "color": ACCENT, "on_tap": self.on_add_field, "accessory": "none"})
+        rows.append({"title": "Add a field", "color": ACCENT, "on_tap": self.on_add_field, "accessory": "none"})
         count = store.type_counts().get(self.type_id, 0)
-        note = "Comes with the app and cannot be changed: use Actions > Make a copy." if bundled else \
-            "Tap a field to move, rename or remove it."
+        note = "Tap a field to move, rename or remove it."
+        if item_type["bundled"]:
+            note += " This type came with the app%s." % (
+                "; Actions > Reset brings back the original" if item_type["changed"] else "")
         self.show([("%s  \u00b7  %d item(s)" % (item_type["name"], count), rows),
                    ("", [{"title": note, "color": MUTED, "lines": 0}])])
 
@@ -913,22 +920,30 @@ class TypeScreen(TableScreen):
             return
         store = self.app.store
         item_type = store.get_type(self.type_id)
-        if item_type.get("bundled"):
-            if choose(item_type["name"], ["Make a copy to change it"]) == 0:
-                self.app.create_type(based_on=self.type_id)
-            return
-        index = choose(item_type["name"], ["Rename type", "Make a copy", "Delete type"])
-        if index == 0:
+        actions = ["Rename type", "Make a copy"]
+        if self.type_id != GENERIC:
+            actions.append("Delete type")
+        if item_type["changed"]:
+            actions.append("Reset to how it came with the app")
+        index = choose(item_type["name"], actions)
+        action = None if index is None else actions[index]
+        if action == "Rename type":
             store.rename_type(self.type_id, ask_text("Rename type", "", item_type["name"]))
             self.app.refresh_all()
-        elif index == 1:
+        elif action == "Make a copy":
             self.app.create_type(based_on=self.type_id)
-        elif index == 2:
+        elif action == "Reset to how it came with the app":
+            if confirm("Reset '%s'?" % item_type["name"], "Values of fields it no longer has stay in the "
+                       "items (shown, and you can clear them).", "Reset"):
+                store.reset_type(self.type_id)
+                self.app.refresh_all()
+        elif action == "Delete type":
             count = store.type_counts().get(self.type_id, 0)
             if count:
                 info("Type in use", "%d item(s) have this type. Give them another type first "
                      "(edit the item and tap Type)." % count)
-            elif confirm("Delete the type '%s'?" % item_type["name"], "No item uses it.", "Delete"):
+            elif confirm("Delete the type '%s'?" % item_type["name"], "No item uses it." + (
+                    " You can restore it from the Item types screen." if item_type["bundled"] else ""), "Delete"):
                 store.delete_type(self.type_id)
                 self.app.refresh_all()
                 self.app.pop()

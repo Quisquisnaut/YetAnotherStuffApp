@@ -205,7 +205,7 @@ _bundled_cache = []
 
 
 def bundled_types():
-    """The types that come with the app (resolved, read-only)."""
+    """The original versions of the types that come with the app."""
     if not _bundled_cache:
         from .itemtypes import BUNDLED_TYPES
 
@@ -317,7 +317,7 @@ class Store(object):
         self.backups_dir = os.path.join(self.root, "backups")
         self.meta_dir = os.path.join(self.root, "meta")
         self.types_path = os.path.join(self.meta_dir, "types.json")
-        self._types_cache = (None, [])
+        self._types_cache = (None, [], [])
         self.problems = []  # damaged files that could not be repaired
         self.repaired = []  # damaged files repaired from their .bak copy
         for path in (self.boxes_dir, self.items_dir, self.images_dir, self.exports_dir,
@@ -765,48 +765,90 @@ class Store(object):
         return item
 
     # --------------------------------------------------------------- types
-    def _load_user_types(self):
-        """User types from ``meta/types.json`` (checked: the file may have
-        been edited by hand), as stored: ``[{"id", "name", "fields"}]``."""
+    def _load_types_file(self):
+        """``(stored types, ids of deleted bundled types)`` from
+        ``meta/types.json`` (checked: the file may have been edited by hand).
+        Stored types are the user's types and the changed bundled ones."""
         try:
             stamp = (os.path.getmtime(self.types_path), os.path.getsize(self.types_path))
         except OSError:
             stamp = None
-        if stamp is not None and self._types_cache[0] == stamp:
-            return [dict(t, fields=list(t["fields"])) for t in self._types_cache[1]]
-        data = {}
-        for path in (self.types_path, self.types_path + ".bak"):
-            try:
-                data = self._load_json(path)
-                break
-            except (OSError, ValueError, UnicodeDecodeError):
-                continue
-        result = []
-        names = [t["name"].lower() for t in bundled_types()]
-        ids = set(BUNDLED_IDS)
-        for raw in data.get("types") if isinstance(data.get("types"), list) else []:
-            if not isinstance(raw, dict):
-                continue
-            type_id, name = raw.get("id"), _one_line(raw.get("name"))[:MAX_FIELD_NAME]
-            if not isinstance(type_id, str) or not _ID_RE.match(type_id) or type_id in ids:
-                continue
-            if not name or name.lower() in names:
-                continue
-            ids.add(type_id)
-            names.append(name.lower())
-            result.append({"id": type_id, "name": name, "bundled": False,
-                           "fields": _clean_type_fields(raw.get("fields"), strict=False)})
-        self._types_cache = (stamp, [dict(t, fields=list(t["fields"])) for t in result])
-        return result
+        if stamp is None or self._types_cache[0] != stamp:
+            data = {}
+            for path in (self.types_path, self.types_path + ".bak"):
+                try:
+                    data = self._load_json(path)
+                    break
+                except (OSError, ValueError, UnicodeDecodeError):
+                    continue
+            stored, ids, names = [], set(), set()
+            for raw in data.get("types") if isinstance(data.get("types"), list) else []:
+                if not isinstance(raw, dict):
+                    continue
+                type_id, name = raw.get("id"), _one_line(raw.get("name"))[:MAX_FIELD_NAME]
+                if not isinstance(type_id, str) or not (_ID_RE.match(type_id) or type_id in BUNDLED_IDS):
+                    continue
+                if type_id in ids or not name or name.lower() in names:
+                    continue
+                ids.add(type_id)
+                names.add(name.lower())
+                stored.append({"id": type_id, "name": name, "bundled": type_id in BUNDLED_IDS,
+                               "fields": _clean_type_fields(raw.get("fields"), strict=False)})
+            removed = data.get("removed") if isinstance(data.get("removed"), list) else []
+            removed = [r for r in BUNDLED_IDS if r in removed and r != GENERIC and r not in ids]
+            self._types_cache = (stamp, stored, removed)
+        return [dict(t, fields=list(t["fields"])) for t in self._types_cache[1]], list(self._types_cache[2])
 
-    def _save_user_types(self, types):
-        self._types_cache = (None, [])
+    def _load_user_types(self):
+        """The stored types: the user's own and the changed bundled ones."""
+        return self._load_types_file()[0]
+
+    def _save_user_types(self, types, removed=None):
+        if removed is None:
+            removed = self._load_types_file()[1]
+        self._types_cache = (None, [], [])
         self._write(self.types_path, {"id": "types", "types": [
-            {"id": t["id"], "name": t["name"], "fields": _fields_to_json(t["fields"])} for t in types]})
+            {"id": t["id"], "name": t["name"], "fields": _fields_to_json(t["fields"])} for t in types],
+            "removed": [r for r in BUNDLED_IDS if r in removed]})
 
     def list_types(self):
-        """Bundled types (Generic first), then the user's types by name."""
-        return bundled_types() + sorted(self._load_user_types(), key=lambda t: t["name"].lower())
+        """The bundled types (Generic first; their changed versions if the
+        user changed them), then the user's own types by name. Each type has
+        ``bundled`` (came with the app) and ``changed`` (differs from the
+        original)."""
+        stored, removed = self._load_types_file()
+        by_id = dict((t["id"], t) for t in stored)
+        names = set(t["name"].lower() for t in stored)
+        result = []
+        for original in bundled_types():
+            if original["id"] in by_id:
+                result.append(dict(by_id[original["id"]], changed=True))
+            elif original["id"] == GENERIC or (original["id"] not in removed
+                                                and original["name"].lower() not in names):
+                result.append(dict(original, changed=False))
+        taken = set(t["name"].lower() for t in result)
+        own = [dict(t, changed=False) for t in stored if not t["bundled"] and t["name"].lower() not in taken]
+        return result + sorted(own, key=lambda t: t["name"].lower())
+
+    def removed_bundled_types(self):
+        """The original versions of the bundled types the user deleted."""
+        removed = self._load_types_file()[1]
+        return [t for t in bundled_types() if t["id"] in removed]
+
+    def reset_type(self, type_id):
+        """Bring a bundled type back to how it came with the app (also
+        restores a deleted one). Values of fields the original does not
+        have are kept in the items (shown, and they can be cleared)."""
+        if type_id not in BUNDLED_IDS:
+            raise StorageError("Only the types that come with the app can be reset.")
+        original = [t for t in bundled_types() if t["id"] == type_id][0]
+        stored, removed = self._load_types_file()
+        stored = [t for t in stored if t["id"] != type_id]
+        for other in stored:
+            if other["name"].lower() == original["name"].lower():
+                raise StorageError("There is already a type called '%s': rename it first." % other["name"])
+        self._save_user_types(stored, [r for r in removed if r != type_id])
+        return self.get_type(type_id)
 
     def get_type(self, type_id):
         for item_type in self.list_types():
@@ -866,15 +908,17 @@ class Store(object):
         return name
 
     def _user_type(self, type_id):
-        """``(all user types, the one with type_id)``; bundled types cannot change."""
-        if type_id in BUNDLED_IDS:
-            raise StorageError("The types that come with the app cannot be changed. "
-                               "Make a copy of it instead.")
+        """``(stored types, the one with type_id)`` ready to be changed. A
+        bundled type that was not changed yet is added as a copy."""
         types = self._load_user_types()
         for item_type in types:
             if item_type["id"] == type_id:
                 return types, item_type
-        raise StorageError("No item type with id %s" % (type_id,))
+        item_type = self.get_type(type_id)
+        item_type = {"id": item_type["id"], "name": item_type["name"], "bundled": True,
+                     "fields": list(item_type["fields"])}
+        types.append(item_type)
+        return types, item_type
 
     def create_type(self, name, fields=None, based_on=None):
         """Create a user type. ``fields`` is a list of standard keys and
@@ -897,14 +941,21 @@ class Store(object):
         return item_type
 
     def delete_type(self, type_id):
-        """Remove a user type. Only possible when no item has it."""
-        types, item_type = self._user_type(type_id)
+        """Delete a type. Only possible when no item has it. Generic cannot
+        be deleted; a deleted bundled type can be restored (``reset_type``)."""
+        if type_id == GENERIC:
+            raise StorageError("The Generic type cannot be deleted: it is used when an item's "
+                               "type is missing. You can change its fields.")
+        item_type = self.get_type(type_id)
         count = len(self.type_items(type_id))
         if count:
             raise StorageError("%d item(s) have the type '%s'. Give them another type first."
                                % (count, item_type["name"]))
-        types.remove(item_type)
-        self._save_user_types(types)
+        stored, removed = self._load_types_file()
+        stored = [t for t in stored if t["id"] != type_id]
+        if type_id in BUNDLED_IDS:
+            removed.append(type_id)
+        self._save_user_types(stored, removed)
         return True
 
     @staticmethod

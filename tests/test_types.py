@@ -31,14 +31,67 @@ class BundledTypeTests(TempStoreTestCase):
                 else:
                     self.assertIn(field, STANDARD_KEYS)
 
-    def test_bundled_types_cannot_be_changed(self):
-        for change in (lambda: self.store.rename_type("book", "Novel"),
-                       lambda: self.store.delete_type("book"),
-                       lambda: self.store.add_type_field("book", "Signed"),
-                       lambda: self.store.remove_type_field("book", "extra:Author"),
-                       lambda: self.store.move_type_field("book", "notes", -1)):
-            self.assertRaises(StorageError, change)
-        self.assertEqual(self.store.get_type("book")["name"], "Book")
+    def test_requested_bundled_fields(self):
+        def labels(type_id):
+            return [label for _k, label, _kind in self.store.get_type(type_id)["fields"]]
+        for type_id, wanted in (("furniture", ["Color", "Size"]), ("device", ["Specs"]),
+                                ("book", ["Author", "Publisher", "Year published", "Bookshelf"])):
+            for label in wanted:
+                self.assertIn(label, labels(type_id))
+
+    def test_bundled_types_can_be_changed_and_reset(self):
+        box = self.store.create_box("Library")
+        book = self.store.create_item("Dune", box["id"], "book", extra={"Author": "Herbert", "Bookshelf": "B2"})
+        self.store.rename_type("book", "Novel")
+        self.assertEqual(self.store.add_type_field("book", "Signed"), "extra:Signed")
+        self.store.rename_type_field("book", "extra:Bookshelf", "Shelf")
+        self.assertEqual(self.store.remove_type_field("book", "extra:Author"), 1)
+        self.store.move_type_field("book", "notes", -1)
+        book_type = self.store.get_type("book")
+        self.assertEqual((book_type["name"], book_type["bundled"], book_type["changed"]), ("Novel", True, True))
+        self.assertEqual(self.store.get_item(book["id"])["extra"], {"Shelf": "B2"})
+        self.assertEqual(self.store.find_type("novel")["id"], "book")
+        self.assertEqual(self.store.find_type("Book")["id"], "book")  # (by id)
+        # The changed version survives a new Store (it is saved in meta/types.json).
+        self.assertEqual(Store(self.store.root).get_type("book")["name"], "Novel")
+        self.assertEqual([t["name"] for t in self.store.list_types()][1], "Novel")
+        # Reset: the original comes back; values of other fields stay as leftovers.
+        self.store.reset_type("book")
+        book_type = self.store.get_type("book")
+        self.assertEqual((book_type["name"], book_type["changed"]), ("Book", False))
+        self.assertIn(("extra:Shelf", "Shelf", "text", "B2"), self.store.item_fields(self.store.get_item(book["id"])))
+        self.assertRaises(StorageError, self.store.reset_type, self.store.create_type("Mine")["id"])
+
+    def test_delete_and_restore_bundled_type(self):
+        self.store.delete_type("key")
+        self.assertFalse(self.store.type_exists("key"))
+        self.assertEqual([t["id"] for t in self.store.removed_bundled_types()], ["key"])
+        self.assertEqual(Store(self.store.root).removed_bundled_types()[0]["id"], "key")
+        # Its name is free now; restoring needs it back.
+        mine = self.store.create_type("Key")
+        self.assertRaises(StorageError, self.store.reset_type, "key")
+        self.store.rename_type(mine["id"], "House key")
+        self.assertEqual(self.store.reset_type("key")["name"], "Key")
+        self.assertEqual(self.store.removed_bundled_types(), [])
+        # In use: cannot be deleted. Generic: never.
+        box = self.store.create_box("Box")
+        self.store.create_item("Spare", box["id"], "key")
+        self.assertRaises(StorageError, self.store.delete_type, "key")
+        self.assertRaises(StorageError, self.store.delete_type, GENERIC)
+
+    def test_generic_can_be_changed_but_is_always_there(self):
+        self.store.rename_type(GENERIC, "Other")
+        self.store.remove_type_field(GENERIC, "made_in")
+        self.assertEqual(self.store.list_types()[0]["name"], "Other")
+        self.assertEqual(self.store.item_type({"type": "missing"})["id"], GENERIC)
+        # A tampered file cannot remove Generic or hide it behind a type with its name.
+        with open(self.store.types_path, "w", encoding="utf-8") as fh:
+            json.dump({"id": "types", "types": [{"id": "abcdef123456", "name": "Generic", "fields": []}],
+                       "removed": ["generic", "book", "nonsense"]}, fh)
+        store = Store(self.store.root)
+        self.assertEqual(store.list_types()[0]["id"], GENERIC)
+        self.assertEqual([t["id"] for t in store.removed_bundled_types()], ["book"])
+        self.assertEqual(len([t for t in store.list_types() if t["name"] == "Generic"]), 1)
 
     def test_default_type_is_generic(self):
         box = self.store.create_box("Box")
@@ -158,12 +211,14 @@ class UserTypeTests(TempStoreTestCase):
             json.dump({"id": "types", "types": [
                 {"id": "ok1", "name": "Ok", "fields": ["price", {"name": "Size", "kind": "line"},
                                                        {"name": "Bad:name"}, "nonsense", 5]},
-                {"id": "book", "name": "Fake book", "fields": []},
+                {"id": "book", "name": "Fake book", "fields": ["price"]},
                 {"id": "dup", "name": "ok", "fields": []},
                 {"id": "x", "name": None, "fields": []},
                 "garbage"]}, fh)
-        types = [t for t in Store(self.store.root).list_types() if not t["bundled"]]
+        store = Store(self.store.root)
+        types = [t for t in store.list_types() if not t["bundled"]]
         self.assertEqual([t["name"] for t in types], ["Ok"])
+        self.assertEqual(store.get_type("book")["name"], "Fake book")  # a changed bundled type
         self.assertEqual([k for k, _l, _k in types[0]["fields"]], ["price", "extra:Size"])
         with open(self.store.types_path, "w", encoding="utf-8") as fh:
             fh.write("{not json")
