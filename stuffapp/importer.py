@@ -6,6 +6,7 @@ known key continue the previous field, so descriptions and notes can span
 several lines::
 
     Name: Cordless drill
+    Box: Garage tools
     Description: 18V drill with two batteries
     Location: Garage, shelf 2
     Links: https://example.com/drill, https://example.com/manual
@@ -16,6 +17,8 @@ several lines::
     Warranty until 2026.
     Spare bits are in the blue case.
 
+``Box`` is optional: when it names an existing box, the item goes there;
+otherwise the app asks which box to use (every item is in a box).
 ``Images`` paths are relative to the text file. The Markdown files written
 by "Export item to Markdown" use the same keys and can be imported again.
 A ``.json`` file with the same field names is accepted too.
@@ -53,13 +56,15 @@ KEY_ALIASES = {
     "image": "images",
     "gallery": "images",
     "image gallery": "images",
+    "box": "box",
+    "paid price (€)": "price",
 }
 
 # Keys written by the exporter that are not item fields.
-IGNORED_KEYS = {"box", "id", "created", "modified"}
+IGNORED_KEYS = {"id", "created", "modified"}
 
 # "Key: value", "- **Key:** value", "**Key**: value" ...
-_FIELD_RE = re.compile(r"^\s*(?:[-*+]\s+)?\**\s*([A-Za-z][A-Za-z ]*?)\s*(?::\**|\**\s*:)\s*(.*)$")
+_FIELD_RE = re.compile(r"^\s*(?:[-*+]\s+)?\**\s*([A-Za-z][A-Za-z ()\u20ac]*?)\s*(?::\**|\**\s*:)\s*(.*)$")
 _HEADING_RE = re.compile(r"^\s*#\s+(.+?)\s*$")
 _MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)\)")
 
@@ -110,7 +115,7 @@ def parse_item_text(text):
                 current = None
         else:
             fields[current] = (fields[current] + "\n" + line.strip()) if fields[current] else line.strip()
-    for key in ("description", "location", "origin", "notes", "name", "price"):
+    for key in ("description", "location", "origin", "notes", "name", "price", "box"):
         if key in fields:
             fields[key] = fields[key].strip()
     if not fields.get("name"):
@@ -132,19 +137,36 @@ def parse_item_file(path):
     return parse_item_text(text)
 
 
-def import_item_file(store, path, box_id=None):
-    """Create an item from the file at ``path``.
+def suggested_box(store, path):
+    """The existing box named in the file's ``Box:`` line, or ``None``."""
+    raw = str(parse_item_file(path).get("box") or "").strip()
+    if raw:
+        for box in store.list_boxes():
+            if box["label"].lower() == raw.lower() or box["id"] == raw:
+                return box
+    return None
 
+
+def import_item_file(store, path, box_id=None):
+    """Create an item from the file at ``path`` inside box ``box_id``.
+
+    Every item must be in a box: without ``box_id`` the box named in the
+    file's ``Box:`` line is used, if it exists.
     Returns ``(item, warnings)``; warnings list images that could not be
     imported.
     """
     fields = parse_item_file(path)
+    if not box_id:
+        box = suggested_box(store, path)
+        if box is None:
+            raise StorageError("Choose a box for '%s': every item must be in a box." % fields["name"])
+        box_id = box["id"]
     images = fields.get("images") or []
     if isinstance(images, str):
         images = _split_values(images)
     data = dict((k, v) for k, v in fields.items() if k in
                 ("description", "location", "links", "price", "origin", "notes"))
-    item = store.create_item(fields["name"], **data)
+    item = store.create_item(fields["name"], box_id, **data)
     warnings = []
     base_dir = os.path.dirname(os.path.abspath(path))
     for image in images:
@@ -159,6 +181,4 @@ def import_item_file(store, path, box_id=None):
             import_image_file(store, item["id"], image_path)
         except StorageError as exc:
             warnings.append("%s: %s" % (image, exc))
-    if box_id:
-        store.add_item_to_box(item["id"], box_id)
     return store.get_item(item["id"]), warnings

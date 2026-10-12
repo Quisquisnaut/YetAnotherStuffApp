@@ -1,9 +1,8 @@
-"""User interfaces.
+"""Text user interface used by ``app.App``.
 
-``PythonistaUI`` uses Pythonista's native ``dialogs``, ``photos`` and
-``console`` modules. ``ConsoleUI`` is a plain text fallback that works in any
-terminal (and in the Pythonista console too). Both expose the same methods so
-the app logic in ``app.py`` does not care which one is used.
+Works in any terminal: Windows, Linux, macOS, Android (Termux, Pydroid 3)
+and the Pythonista console (``--console``). The touch interface for
+Pythonista lives in ``touch.py``.
 """
 
 import os
@@ -11,7 +10,7 @@ import shutil
 import subprocess
 import sys
 
-from .images import pil_to_jpeg_bytes, to_jpeg_bytes
+from .images import to_jpeg_bytes
 
 TEXT_FILE_EXTS = (".txt", ".md", ".markdown", ".json")
 IMAGE_FILE_EXTS = (".jpg", ".jpeg", ".png", ".heic")
@@ -161,6 +160,10 @@ class ConsoleUI(object):
         path = self._ask("Path of %s: " % what).strip().strip("'\"")
         return os.path.expanduser(path) if path else None
 
+    def ask_path(self, prompt):
+        path = self._ask("%s: " % prompt).strip().strip("'\"")
+        return os.path.expanduser(path) if path else None
+
     def pick_text_file(self):
         return self._pick_path("the item file", TEXT_FILE_EXTS)
 
@@ -195,122 +198,3 @@ class ConsoleUI(object):
     def show_images(self, paths):
         self.message("\n".join(paths) or "No images.", title="Images")
         self._open(paths)
-
-
-class PythonistaUI(object):  # pragma: no cover - needs Pythonista
-    """Native iOS dialogs, available only inside Pythonista."""
-
-    def __init__(self, docs_dir):
-        import objc_util  # noqa: F401 - only exists in Pythonista
-        import console
-        import dialogs
-        import photos
-
-        self.console = console
-        self.dialogs = dialogs
-        self.photos = photos
-        self.docs_dir = docs_dir
-        self.skip = ()
-
-    def message(self, text, title=None):
-        try:
-            self.dialogs.alert(title or "Stuff", text, "OK", hide_cancel_button=True)
-        except KeyboardInterrupt:
-            pass
-
-    def choose(self, title, options):
-        if not options:
-            return None
-        labels = ["%d. %s" % (n, o) for n, o in enumerate(options, start=1)]
-        picked = self.dialogs.list_dialog(title, labels)
-        if picked is None:
-            return None
-        return labels.index(picked)
-
-    def form(self, title, fields):
-        spec = [{"type": "text", "key": key, "title": label, "value": default or ""}
-                for key, label, default in fields]
-        result = self.dialogs.form_dialog(title, spec)
-        if result is None:
-            raise Cancelled()
-        return result
-
-    def text(self, title, default=""):
-        result = self.dialogs.text_dialog(title, default or "")
-        if result is None:
-            raise Cancelled()
-        return result
-
-    def confirm(self, text):
-        try:
-            return self.dialogs.alert("Please confirm", text, "Yes") == 1
-        except KeyboardInterrupt:
-            return False
-
-    def _pick_source(self, sources):
-        index = self.choose("Import from", sources)
-        if index is None:
-            raise Cancelled()
-        return sources[index]
-
-    def _pick_local(self, what, exts):
-        files = find_files(self.docs_dir, exts, skip=self.skip)
-        index = self.choose("Choose %s" % what, files)
-        return None if index is None else os.path.join(self.docs_dir, files[index])
-
-    def pick_text_file(self):
-        source = self._pick_source(["Files app", "Pythonista folder"])
-        if source == "Files app":
-            return self.dialogs.pick_document(
-                types=["public.text", "public.plain-text", "public.json",
-                       "net.daringfireball.markdown"])
-        return self._pick_local("the item file", TEXT_FILE_EXTS)
-
-    def pick_images(self):
-        source = self._pick_source(["Photos", "Files app", "Pythonista folder"])
-        result = []
-        if source == "Photos":
-            assets = self.photos.pick_asset(title="Pick images", multi=True) or []
-            for number, asset in enumerate(assets, start=1):
-                try:
-                    data = to_jpeg_bytes(asset.get_image_data().getvalue())
-                except Exception:
-                    data = pil_to_jpeg_bytes(asset.get_image())
-                result.append(("photo_%d" % number, data))
-        else:
-            if source == "Files app":
-                path = self.dialogs.pick_document(types=["public.jpeg", "public.image"])
-            else:
-                path = self._pick_local("an image", IMAGE_FILE_EXTS)
-            if path:
-                with open(path, "rb") as fh:
-                    result.append((os.path.basename(path), to_jpeg_bytes(fh.read())))
-        return result
-
-    def show_file(self, path):
-        try:
-            choice = self.dialogs.alert(
-                "Exported", os.path.basename(path), "Preview", "Share / Open in...",
-                hide_cancel_button=False)
-        except KeyboardInterrupt:
-            return
-        if choice == 1:
-            self.console.quicklook(path)
-        elif choice == 2:
-            self.console.open_in(path)
-
-    def show_images(self, paths):
-        if paths:
-            self.console.quicklook(paths)
-        else:
-            self.message("This item has no images.")
-
-
-def make_ui(docs_dir, force_console=False):
-    """Native dialogs in Pythonista, text menus everywhere else."""
-    if not force_console:
-        try:
-            return PythonistaUI(docs_dir)
-        except ImportError:
-            pass
-    return ConsoleUI(docs_dir=docs_dir)

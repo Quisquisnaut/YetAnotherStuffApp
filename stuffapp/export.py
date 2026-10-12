@@ -8,6 +8,7 @@ the file can be imported again with "Import item".
 import os
 import re
 import shutil
+from datetime import datetime
 
 from .pdf import PDFDocument
 
@@ -17,14 +18,36 @@ def slugify(text, fallback="export"):
     return slug[:60] or fallback
 
 
+CURRENCY = "\u20ac"  # Euro sign
+
+
 def format_price(price):
+    """``1299.5`` -> ``"€1,299.50"``; empty string for no price."""
     if price is None or price == "":
         return ""
-    return "%.2f" % float(price)
+    return "%s%s" % (CURRENCY, "{:,.2f}".format(float(price)))
 
 
 def _export_base(store, name, obj_id):
     return os.path.join(store.exports_dir, "%s_%s" % (slugify(name), obj_id[:6]))
+
+
+def _count_line(store, items):
+    total = store.total_value(items)
+    line = "%d item(s)" % len(items)
+    if total:
+        line += ", total paid %s" % format_price(total)
+    return line
+
+
+def _group_by_box(store, items):
+    """``[(box, [items])]`` in box label order, only non-empty boxes."""
+    groups = []
+    for box in store.list_boxes():
+        in_box = [i for i in items if i.get("box") == box["id"]]
+        if in_box:
+            groups.append((box, in_box))
+    return groups
 
 
 # ------------------------------------------------------------------ markdown
@@ -38,7 +61,7 @@ def item_markdown(store, item, level=1, image_dir=None, md_dir=None):
     simple = (
         ("Description", item.get("description")),
         ("Location", item.get("location")),
-        ("Price", format_price(item.get("price"))),
+        ("Paid price", format_price(item.get("price"))),
         ("Origin", item.get("origin")),
     )
     for label, value in simple:
@@ -53,6 +76,7 @@ def item_markdown(store, item, level=1, image_dir=None, md_dir=None):
             lines.append("  - <%s>" % link)
     if item.get("notes"):
         _md_field(lines, "Notes", item["notes"])
+    lines.append("- **ID:** %s" % item["id"])
     if item.get("images") and image_dir:
         if not os.path.isdir(image_dir):
             os.makedirs(image_dir)
@@ -95,10 +119,10 @@ def export_box_markdown(store, box_id, path=None):
     path = path or _export_base(store, box["label"], box["id"]) + ".md"
     md_dir = os.path.dirname(os.path.abspath(path))
     image_dir = os.path.splitext(path)[0] + "_images"
-    parts = ["# Box: %s" % box["label"], ""]
+    parts = ["# Box: %s" % box["label"], "", "ID: %s" % box["id"], ""]
     if box.get("description"):
         parts += [box["description"], ""]
-    parts += ["%d item(s)" % len(items), ""]
+    parts += [_count_line(store, items), ""]
     for item in items:
         parts.append("---")
         parts.append("")
@@ -109,11 +133,11 @@ def export_box_markdown(store, box_id, path=None):
 
 
 # ----------------------------------------------------------------------- pdf
-def _item_pdf(store, doc, item, heading_size=18, show_box=True):
+def _item_pdf(store, doc, item, heading_size=18, show_box=True, images=True):
     doc.heading(item["name"], size=heading_size)
     doc.field("Description", item.get("description"))
     doc.field("Location", item.get("location"))
-    doc.field("Price", format_price(item.get("price")))
+    doc.field("Paid price", format_price(item.get("price")))
     doc.field("Origin", item.get("origin"))
     if show_box:
         box = store.box_of_item(item["id"])
@@ -121,7 +145,8 @@ def _item_pdf(store, doc, item, heading_size=18, show_box=True):
     if item.get("links"):
         doc.field("Links", "\n".join(item["links"]))
     doc.field("Notes", item.get("notes"))
-    for path in store.image_paths(item):
+    doc.text("ID: %s" % item["id"], size=8)
+    for path in store.image_paths(item) if images else []:
         if not os.path.isfile(path):
             continue
         with open(path, "rb") as fh:
@@ -147,10 +172,60 @@ def export_box_pdf(store, box_id, path=None):
     path = path or _export_base(store, box["label"], box["id"]) + ".pdf"
     doc = PDFDocument(title="Box: %s" % box["label"])
     doc.heading("Box: %s" % box["label"], size=22)
+    doc.text("ID: %s" % box["id"], size=8)
     if box.get("description"):
         doc.text(box["description"])
-    doc.text("%d item(s)" % len(items), size=10)
+    doc.text(_count_line(store, items), size=10)
     for item in items:
         doc.rule()
         _item_pdf(store, doc, item, heading_size=15, show_box=False)
     return doc.save(path)
+
+
+# ----------------------------------------------------------------- inventory
+def export_inventory_markdown(store, items=None, title="Inventory", path=None):
+    """Export all items (or the given ``items``, e.g. search results)
+    grouped by box, with item counts and total value."""
+    items = store.list_items() if items is None else items
+    path = path or os.path.join(store.exports_dir, "%s_%s.md" % (slugify(title), _stamp()))
+    md_dir = os.path.dirname(os.path.abspath(path))
+    image_dir = os.path.splitext(path)[0] + "_images"
+    groups = _group_by_box(store, items)
+    parts = ["# %s" % title, "", _count_line(store, items) + " in %d box(es)" % len(groups), ""]
+    for box, in_box in groups:
+        parts.append("## Box: %s" % box["label"])
+        parts.append("")
+        if box.get("description"):
+            parts += [box["description"], ""]
+        parts += [_count_line(store, in_box), ""]
+        for item in in_box:
+            parts.append(item_markdown(store, item, level=3, image_dir=image_dir, md_dir=md_dir))
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(parts))
+    return path
+
+
+def export_inventory_pdf(store, items=None, title="Inventory", path=None, images=True):
+    items = store.list_items() if items is None else items
+    path = path or os.path.join(store.exports_dir, "%s_%s.pdf" % (slugify(title), _stamp()))
+    groups = _group_by_box(store, items)
+    doc = PDFDocument(title=title)
+    doc.heading(title, size=24)
+    doc.text(_count_line(store, items) + " in %d box(es)" % len(groups))
+    doc.space(6)
+    for box, in_box in groups:
+        doc.text("%s  -  %s" % (box["label"], _count_line(store, in_box)), size=10)
+    for box, in_box in groups:
+        doc.new_page()
+        doc.heading("Box: %s" % box["label"], size=20)
+        if box.get("description"):
+            doc.text(box["description"])
+        doc.text(_count_line(store, in_box), size=10)
+        for item in in_box:
+            doc.rule()
+            _item_pdf(store, doc, item, heading_size=14, show_box=False, images=images)
+    return doc.save(path)
+
+
+def _stamp():
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
