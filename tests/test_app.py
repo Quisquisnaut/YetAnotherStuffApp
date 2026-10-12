@@ -187,6 +187,25 @@ class GuideTests(unittest.TestCase):
         self.assertEqual(fields["box"], "Garage")
         self.assertEqual(fields["images"], ["drill.jpg", "drill-case.jpg"])
 
+    def test_example_item_file_imports_as_device_without_warnings(self):
+        import shutil
+        import tempfile
+
+        from stuffapp.importer import import_item_file
+        from stuffapp.storage import Store
+
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        store = Store(tmp + "/data")
+        box = store.create_box("Garage")
+        path = tmp + "/drill.txt"
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(guide.ITEM_FILE_EXAMPLE.replace("Images: drill.jpg, drill-case.jpg\n", ""))
+        item, warnings = import_item_file(store, path, box["id"])
+        self.assertEqual(warnings, [])
+        self.assertEqual(item["type"], "device")
+        self.assertEqual(item["extra"], {"Model": "DW-18 Pro", "Warranty until": "2027"})
+
     def test_all_topics_in_english_and_non_empty(self):
         for title, text in guide.TOPICS:
             self.assertTrue(title and text.strip())

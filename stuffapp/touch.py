@@ -23,7 +23,7 @@ import photos
 import ui
 
 from . import __version__, backup, config, export, guide
-from .app import TRASH_DAYS, describe_filters, startup
+from .app import TRASH_DAYS, describe_filters, hidden_dirs, startup
 from .images import pil_to_jpeg_bytes, to_jpeg_bytes
 from .importer import import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
@@ -1197,8 +1197,7 @@ class TouchApp(object):
         return result
 
     def _hidden(self):
-        s = self.store
-        return (s.boxes_dir, s.items_dir, s.images_dir, s.trash_dir, s.backups_dir)
+        return hidden_dirs(self.store)
 
     def add_images(self, item_id):
         images = self.pick_images()

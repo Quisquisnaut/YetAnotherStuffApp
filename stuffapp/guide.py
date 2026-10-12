@@ -2,6 +2,7 @@
 
 ITEM_FILE_EXAMPLE = """Name: Cordless drill
 Box: Garage
+Type: Device
 Description: 18V drill
 with two batteries
 Location: Shelf 2
@@ -12,14 +13,14 @@ Product code: DR-18V
 Serial number: SN 0012345
 Maker: Drill Works Ltd
 Brand: Acme
+Model: DW-18 Pro
 Seller: Hardware store
 Made in: Germany
 Year of acquisition: 2023
 Issues: The chuck is a bit loose.
-Warranty: 2 years
+Warranty until: 2027
 Images: drill.jpg, drill-case.jpg
 Notes:
-Warranty until 2027.
 Spare bits are in the blue case.
 """
 
@@ -28,7 +29,8 @@ TOPICS = [
 Stuff keeps your belongings sorted in boxes.
 
 1. Create a Box (for example "Garage" or "Winter clothes").
-2. Create Items inside it. Only the name is required.
+2. Create Items inside it. Choose the item type (Generic, Book, Device...)
+   and give it a name: everything else is optional.
 3. Add photos, links, the paid price (in Euro), where it came from and notes.
 
 Every item is always inside exactly one box. Every box and every item has
@@ -46,45 +48,60 @@ anything you like.
 - Export: a box can be exported to PDF or Markdown with all its items."""),
 
     ("Items", """\
-An item has a name and, optionally: description, location, web links,
-paid price (Euro), origin (where it came from), product code, serial
-number, maker, brand, seller, made in (country), year of acquisition,
-issues (known problems), your own custom fields, a JPEG photo gallery and
-notes.
+An item has a name and a type. Everything else is optional; which details
+an item can have depends on its type (see "Item types"). The Generic type
+has: description, location, web links, paid price (Euro), origin (where it
+came from), product code, serial number, maker, brand, seller, made in
+(country), year of acquisition, issues (known problems) and notes. Every
+item also has a JPEG photo gallery.
 
-- Create Item: choose the box first, then fill in the fields. In the text
-  menus the less common details (product code ... issues and custom
-  fields) are in a second form: answer "y" to "More details?".
+- Create Item: choose the box, then the type, then fill in the fields. In
+  the text menus the less common standard details (product code ...
+  issues) are in a second form: answer "y" to "More details?".
 - Edit Item: change any field. In the touch interface empty a field to
   clear it; in the text menus press Enter to keep a value or type "-" to
   clear it.
+- Change type: touch interface: Edit > Type; text menus: item menu >
+  Change type. Values of fields that the new type does not have are
+  deleted, so you are asked first and told which ones.
 - Clone Item: makes a duplicate (photos included) with a NEW internal ID,
   useful when you own two of the same thing.
-- Add Stuff to Box / Move: puts an item into another box.
+- Add Stuff to Box / Move: puts an item into another box. A box can hold
+  items of any type.
 - Delete Item: asks for confirmation, then moves it to the Trash.
 
 Prices accept "12.50", "12,50", "1.299,00 EUR" or "1,299.00".
 The year of acquisition is a 4-digit year such as 2023."""),
 
-    ("Custom fields", """\
-Custom fields are your own item details, for example "Warranty", "Color"
-or "Size". Each one is a single line of text.
+    ("Item types", """\
+A type is the set of fields its items have. Every item has exactly one
+type. Types that come with the app:
 
-- For all items: Home > Custom fields (text menus: main menu > Custom
-  fields). Every item gets the field.
-- For one box only: open the box > Actions > Custom fields of this box
-  (text menus: box menu > Custom fields of this box). Only the items in
-  that box get it, e.g. "Voltage" for a box of power tools.
+- Generic: every standard detail (see "Items").
+- Book, Furniture, Device, Gadget, Media, Plant, Appliance, Shoe,
+  Clothes, Vehicle, Card, Key: the useful standard details plus their own
+  fields, e.g. Author and ISBN for a Book, Size and Color for a Shoe,
+  Plate number for a Vehicle, Opens for a Key.
 
-Fill them in when you create or edit an item; leave one empty if it does
-not apply. Field names must start with a letter, can be up to 40
+The Card type is for ID, bank, loyalty or membership cards. Never store a
+PIN, a password or a full card number: only the last digits.
+
+Your own types: Home > Item types (text menus: main menu > Item types).
+- Create a type: give it a name and start from no fields or from a copy
+  of another type.
+- Add a field: a standard one (Price, Brand...) or your own (for example
+  "Players" or "Warranty until"), one line or several lines.
+- Move fields up or down, rename your own fields (values are kept) or
+  switch them between one line and several lines.
+- Remove a field: asks for confirmation and tells you how many items have
+  a value for it; those values are deleted (a backup can bring them back).
+- Delete a type: only when no item has it any more.
+
+The types that come with the app cannot be changed: make a copy and
+change the copy. Field names must start with a letter, can be up to 40
 characters and cannot repeat a standard detail (Name, Price, Brand...).
-
-- Rename: the values in the items are kept.
-- Remove: asks for confirmation and tells you how many items have a value
-  for it; those values are deleted (a backup can bring them back).
-- Moving an item to another box keeps its values; values of fields that do
-  not belong to the new box are still shown, so nothing is hidden."""),
+If an item has a value for a field its type no longer has, the value is
+still shown so nothing is hidden; you can clear it."""),
 
     ("Photos", """\
 Photos must be JPEG (.jpg / .jpeg). With the Pillow library installed
@@ -102,26 +119,31 @@ long descriptions, issues and notes may continue on the following lines
 (an extra line after a one-line detail such as Serial number is added to
 the notes, and so is a line with an unknown key such as "Color: red").
 Only Name is required.
-Known keys: Name, Box, Description, Location, Links, Price, Origin,
+Known keys: Name, Box, Type, Description, Location, Links, Price, Origin,
 Product code, Serial number, Maker, Brand, Seller, Made in, Year of
-acquisition, Issues, Images, Notes, plus the names of your custom fields.
+acquisition, Issues, Images, Notes, plus the field names of the types
+(Author, Model, Size...).
 Some other spellings work too (SKU, S/N, Manufacturer, Shop, Year...).
 Images are file names relative to the text file.
 
 If the file names a Box that exists, you are offered that box; otherwise you
-choose one. A Markdown file exported by this app can be imported back.
+choose one. If the file names a Type that exists, the item gets that type;
+otherwise you choose one. Values for fields the type does not have are
+added to the notes (and you are told). A Markdown file exported by this app
+can be imported back.
 
 Example:
 
 """ + ITEM_FILE_EXAMPLE),
 
     ("Search, filter and export", """\
-Search finds items whose details (name, description, serial number, brand,
-issues, custom fields...), links or box contain all the words you type.
+Search finds items whose details (name, type, description, serial number,
+brand, issues, the fields of the type...), links or box contain all the
+words you type.
 
-Filters: box, location, origin, minimum / maximum price, only items with
-photos. Sort by name, price (highest first), newest, box or year of acquisition
-(newest first).
+Filters: box, type, location, origin, minimum / maximum price, only items
+with photos. Sort by name, price (highest first), newest, box, type or year
+of acquisition (newest first).
 
 Export all writes every item (grouped by box) to one PDF or Markdown file.
 The search results can be exported the same way. Exported files are saved
@@ -145,8 +167,8 @@ time."""),
 
     ("Data folder and iCloud", """\
 All data lives in plain files in the data folder (by default "StuffData"
-next to main.py): boxes/, items/, images/, meta/ (the custom fields of all
-items), trash/, backups/ and exports/.
+next to main.py): boxes/, items/, images/, meta/ (your item types, in
+types.json), trash/, backups/ and exports/.
 
 Settings > data folder lets you move it, for example into iCloud Drive
 (on iPhone with Pythonista) or a synced folder (OneDrive, Dropbox...) on a
