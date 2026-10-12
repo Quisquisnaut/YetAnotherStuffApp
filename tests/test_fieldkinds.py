@@ -42,9 +42,11 @@ class PresetFieldTests(TempStoreTestCase):
     def test_catalog_is_valid(self):
         names = []
         for _group, fields in PRESET_FIELDS:
-            for name, kind in fields:
+            for field in fields:
+                name, kind = field[0], field[1]
                 self.assertEqual(check_field_name(name), name)
                 self.assertIn(kind, EXTRA_KINDS)
+                self.assertEqual(len(field) == 3, kind == "choice", name)
                 names.append(name.lower())
         self.assertEqual(len(names), len(set(names)))
 
@@ -56,7 +58,7 @@ class PresetFieldTests(TempStoreTestCase):
                             ("Color", "line"), ("Original operating system", "line"),
                             ("Current operating system", "line"), ("OS version", "line"),
                             ("Firmware version", "line"), ("Ports", "text"), ("Bundled software", "text"),
-                            ("Warranty until", "date")]:
+                            ("Warranty until", "reminder")]:
             self.assertEqual(device.get(label), kind, label)
         it = dict(PRESET_FIELDS)["Electronics & IT"]
         self.assertGreaterEqual(len(it), 25)
@@ -67,17 +69,17 @@ class PresetFieldTests(TempStoreTestCase):
             return dict((label, kind) for _k, label, kind in self.store.get_type(type_id)["fields"])
         wanted = {
             "sportsgear": [("Sport", "line"), ("Size", "line")],
-            "vinyl": [("Artist / author", "line"), ("Speed (RPM)", "number"), ("Tracklist", "text")],
-            "dvd_br": [("Format", "line"), ("Director", "line"), ("Runtime (min)", "number")],
+            "vinyl": [("Artist / author", "line"), ("Speed (RPM)", "choice"), ("Tracklist", "text")],
+            "dvd_br": [("Disc format", "choice"), ("Director", "line"), ("Runtime (min)", "number")],
             "usb_sd": [("Storage (GB)", "number"), ("Storage type", "line"), ("Encrypted", "yesno")],
             "iot": [("Protocol", "line"), ("Wi-Fi", "yesno"), ("IP address", "line")],
-            "subscription": [("Payment amount", "price"), ("Next payment", "date"),
-                             ("Expiration date", "date"), ("Auto-renew", "yesno")],
-            "fidelity": [("Store / chain", "line"), ("Points", "number"), ("Points expire", "date")],
+            "subscription": [("Payment amount", "price"), ("Next payment", "reminder"),
+                             ("Expiration date", "reminder"), ("Auto-renew", "yesno")],
+            "fidelity": [("Store / chain", "line"), ("Points", "number"), ("Points expire", "reminder")],
             "diy": [("Tool kind", "line"), ("Voltage (V)", "number"), ("Power source", "line")],
-            "document": [("Document kind", "line"), ("Document date", "date"), ("Amount", "price"),
+            "document": [("Document kind", "choice"), ("Document date", "date"), ("Amount", "price"),
                          ("Tax year", "year"), ("Paper copy", "yesno"), ("Electronic copy", "yesno"),
-                         ("Keep until", "date")],
+                         ("Keep until", "reminder")],
         }
         for type_id, fields in wanted.items():
             for label, kind in fields:
@@ -98,7 +100,7 @@ class FieldGroupTests(TempStoreTestCase):
         groups = self.store.field_groups(game["id"])
         names = [g for g, _f in groups]
         self.assertEqual(names[0], STANDARD_GROUP)
-        self.assertEqual(names[1:3], ["General", "Electronics & IT"])
+        self.assertEqual(names[1:4], ["General", "Reminders", "Electronics & IT"])
         self.assertEqual(names[-1], OWN_FIELDS_GROUP)
         self.assertEqual(dict(groups)[OWN_FIELDS_GROUP], [("extra:Players", "Players", "number")])
         keys = [f[0] for _g, fields in groups for f in fields]
@@ -121,7 +123,8 @@ class FieldGroupTests(TempStoreTestCase):
     def test_new_field_of_each_kind(self):
         game = self.store.create_type("Game")
         for kind in EXTRA_KINDS:
-            self.store.add_type_field(game["id"], "Field %s" % kind, kind)
+            self.store.add_type_field(game["id"], "Field %s" % kind, kind,
+                                      options=["A", "B"] if kind == "choice" else None)
         kinds = [kind for _k, _l, kind in self.store.get_type(game["id"])["fields"]]
         self.assertEqual(kinds, list(EXTRA_KINDS))
         with self.assertRaises(StorageError):

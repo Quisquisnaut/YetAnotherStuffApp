@@ -55,15 +55,18 @@ English guides to every feature.
     Clothes, Vehicle, Card, Key, Sportsgear, Vinyl** (records), **DVD/BR** (DVDs and
     Blu-rays), **USB/SD** (USB sticks and memory cards), **IoT** (smart-home and IoT
     devices), **Sub** (subscriptions: payment amount, billing period, next payment,
-    expiration date, auto-renew...), **Fidelity** (store and supermarket loyalty cards)
+    expiration date, auto-renew...), **Fidelity** (store and supermarket loyalty cards),
     **DIY** (hammers, screwdrivers, power tools...) and **Document** (receipts,
     prescriptions, tax forms... on paper and/or electronic: kind, issuer, date, amount,
     tax year, keep until, where the paper and the file are). Each has the useful standard
     details plus its own fields (see "Fields of the bundled types" below).
   - **Every field has a kind and a label.** Kinds: Text (one line), Text (several
-    lines), Number, Yes / No, Date, Year, Price (€) and Web link. Values are checked
-    when saved or imported and written in one format (e.g. `2,5` → `2.5`, `y` → `Yes`,
-    `31/12/2026` → `2026-12-31`); put units in the label, e.g. "Storage (GB)".
+    lines), Number, Yes / No, Date, Year, Price (€), Web link, **Choice from a list**
+    (e.g. Condition: New, Like new, Good...; Speed (RPM): 33 1/3, 45, 78; Billing
+    period; Disc format; Document kind; Fuel; Energy class) and **Reminder** (see
+    below). Values are checked when saved or imported and written in one format (e.g.
+    `2,5` → `2.5`, `y` → `Yes`, `31/12/2026` → `2026-12-31`, `good` → `Good`); put
+    units in the label, e.g. "Storage (GB)".
   - **Every type can be changed** in the **Type Editor**, the bundled ones too:
     **Add a field** from a list with a **search box at the top** and the fields
     **grouped**: standard details, ready-made fields (General, Electronics & IT — Storage
@@ -71,8 +74,9 @@ English guides to every feature.
     original/current OS, OS and firmware version, bundled software, IP/MAC address... —
     Books & media, Sports & hobbies, Tools & DIY, Subscriptions, Documents, Clothes & shoes,
     Furniture & home, Plants, Vehicles, Cards & keys) and the fields of your own types;
-    or **New field…** (choose its kind, then its label). **Remove a field**; move or
-    rename fields or change their kind; rename the type, make a
+    or **New field…** (choose its kind, then its label; a choice also asks for its
+    options). **Remove a field**; move or rename fields, change their kind or edit the
+    options of a choice; rename the type, make a
     copy, and delete a type when no item uses it (Generic can't be deleted: it is used
     when an item's type is missing). A changed bundled type can be **reset** to how it
     came with the app, and a deleted one can be **restored**. You can also create new types
@@ -83,6 +87,18 @@ English guides to every feature.
   - The Document type keeps track of documents: for an electronic one, write where the
     file is in "File location" or attach a photo/scan. Data is saved as plain JSON files,
     so don't store passwords or other secrets in it.
+* **Reminders**: fields of kind *Reminder* are dates the app reminds you of, once
+  (`2026-12-31`) or repeating (`2026-11-01, every 3 months`; every week / 2 years,
+  monthly, yearly...). Device, Gadget, Clothes, Shoe, Appliance, IoT, Sportsgear and DIY
+  come with **Warranty until** (end of guarantee), **Battery recharge**, **Maintenance**,
+  **Replacement** and/or **Cleaning**; subscriptions have **Next payment** and
+  **Expiration date**; cards, fidelity cards and documents have **Valid until**,
+  **Points expire** and **Keep until**. Add them to any type (Type Editor, group
+  "Reminders") or make your own. The **Reminders** list (home screen / main menu, with
+  the number due) shows what is due in the next 30 days and what is overdue; what is
+  due within a week is also shown when the app starts. **Done** moves a repeating
+  reminder to its next date and hides a one-off one. (No phone notifications: open the
+  app to see them.)
 * **Clone Item**: duplicates an item, photos included, with a new internal ID
   (for when you own two of the same thing).
 * **Add Stuff to Box**: moves an item into another box.
@@ -109,24 +125,24 @@ As they come with the app (you can change them):
 | Generic | Description, Location, Web links, Paid price, Origin, Product code, Serial number, Maker, Brand, Seller, Made in, Year of acquisition, Issues, Notes |
 | Book | Description, Author, Publisher, Year published, Location, Bookshelf, ISBN, Edition, Language, Pages, Genre, Format, Series, Lent to, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
 | Furniture | Description, Location, Color, Size, Material, Weight (kg), Brand, Maker, Product code, Assembly notes, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
-| Device | Description, Location, Brand, Maker, Model, Specs, Processor, RAM (GB), Storage (GB), Screen size (inches), Display resolution (pixels), Wi-Fi, Mobile data, Bluetooth, Ports, Color, Original operating system, Current operating system, OS version, Firmware version, Bundled software, Product code, Serial number, Accessories, Warranty until, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
-| Gadget | Description, Location, Brand, Maker, Model, Specs, Color, Storage (GB), Wi-Fi, Mobile data, Bluetooth, Firmware version, Product code, Serial number, Battery, Charger / cable, Warranty until, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Device | Description, Location, Brand, Maker, Model, Specs, Processor, RAM (GB), Storage (GB), Screen size (inches), Display resolution (pixels), Wi-Fi, Mobile data, Bluetooth, Ports, Color, Original operating system, Current operating system, OS version, Firmware version, Bundled software, Product code, Serial number, Accessories, Warranty until, Battery recharge, Maintenance, Replacement, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Gadget | Description, Location, Brand, Maker, Model, Specs, Color, Storage (GB), Wi-Fi, Mobile data, Bluetooth, Firmware version, Product code, Serial number, Battery, Charger / cable, Warranty until, Battery recharge, Maintenance, Replacement, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
 | Media | Description, Location, Format, Artist / author, Label / studio, Release year, Genre, Platform, Discs, Region, Language, Product code, Lent to, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
 | Plant | Description, Location, Species, Variety, Light, Watering, Soil, Fertilizer, Pot size, Last repotted, Care, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
-| Appliance | Description, Location, Brand, Maker, Model, Specs, Product code, Serial number, Power (W), Energy class, Color, Size, Warranty until, Last service, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
-| Shoe | Description, Location, Brand, Maker, Size, Width, Color, Material, Style, Season, Product code, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
-| Clothes | Description, Location, Brand, Maker, Garment, Size, Color, Material, Season, Care instructions, Product code, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Appliance | Description, Location, Brand, Maker, Model, Specs, Product code, Serial number, Power (W), Energy class, Color, Size, Warranty until, Last service, Maintenance, Replacement, Cleaning, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Shoe | Description, Location, Brand, Maker, Size, Width, Color, Material, Style, Season, Condition, Product code, Warranty until, Maintenance, Replacement, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Clothes | Description, Location, Brand, Maker, Garment, Size, Color, Material, Season, Care instructions, Condition, Product code, Warranty until, Maintenance, Replacement, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
 | Vehicle | Description, Location, Brand, Maker, Model, Plate number, VIN / frame number, Color, Fuel, Engine, Mileage (km), Year of manufacture, Insurance, Next service, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
 | Card | Description, Location, Card kind, Issuer, Holder, Card number (last digits), Valid from, Valid until, Phone if lost, Web links, Paid price, Origin, Year of acquisition, Issues, Notes |
 | Key | Description, Location, Opens, Key kind, Key number, Tag / color, Copies, Who has copies, Origin, Paid price, Year of acquisition, Issues, Notes |
-| Sportsgear | Description, Location, Sport, Brand, Maker, Model, Size, Color, Material, Weight (kg), Skill level, Used by, Condition, Last service, Product code, Serial number, Lent to, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Sportsgear | Description, Location, Sport, Brand, Maker, Model, Size, Color, Material, Weight (kg), Skill level, Used by, Condition, Last service, Maintenance, Replacement, Product code, Serial number, Lent to, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
 | Vinyl | Description, Location, Artist / author, Label / studio, Release year, Genre, Speed (RPM), Discs, Catalog number, Condition, Sleeve condition, Tracklist, Made in, Lent to, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
-| DVD/BR | Description, Location, Format, Director, Cast, Release year, Genre, Runtime (min), Region, Language, Subtitles, Discs, Age rating, Product code, Lent to, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| DVD/BR | Description, Location, Disc format, Director, Cast, Release year, Genre, Runtime (min), Region, Language, Subtitles, Discs, Age rating, Product code, Lent to, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
 | USB/SD | Description, Location, Brand, Maker, Model, Storage type, Storage (GB), Connector, Speed class, File system, Encrypted, Contents, Color, Product code, Serial number, Lent to, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
-| IoT | Description, Location, Room, Brand, Maker, Model, Specs, Hub / ecosystem, Protocol, Wi-Fi, Bluetooth, App, Firmware version, IP address, MAC address, Hostname, Power source, Battery, Product code, Serial number, Warranty until, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| IoT | Description, Location, Room, Brand, Maker, Model, Specs, Hub / ecosystem, Protocol, Wi-Fi, Bluetooth, App, Firmware version, IP address, MAC address, Hostname, Power source, Battery, Battery recharge, Replacement, Product code, Serial number, Warranty until, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
 | Sub | Description, Provider, Plan, Customer number, Payment amount, Billing period, Next payment, Payment method, Start date, Expiration date, Auto-renew, Cancellation notice, Used by, Web links, Issues, Notes |
 | Fidelity | Description, Location, Store / chain, Holder, Member number, Points, Points expire, Valid until, App, Web links, Year of acquisition, Issues, Notes |
-| DIY | Description, Location, Tool kind, Brand, Maker, Model, Power source, Power (W), Voltage (V), Battery, Size, Bits / blades, Accessories, Spare parts, Last service, Lent to, Product code, Serial number, Warranty until, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| DIY | Description, Location, Tool kind, Brand, Maker, Model, Power source, Power (W), Voltage (V), Battery, Size, Bits / blades, Accessories, Spare parts, Last service, Battery recharge, Maintenance, Lent to, Product code, Serial number, Warranty until, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
 | Document | Description, Location, Document kind, Issuer, Holder, Document number, Document date, Amount, Tax year, Related to, Valid until, Keep until, Paper copy, Electronic copy, File location, Web links, Issues, Notes |
 
 ## Item text file format

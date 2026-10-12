@@ -23,12 +23,13 @@ import photos
 import ui
 
 from . import __version__, backup, config, export, guide
-from .app import KIND_CHOICES, KIND_NAMES, TRASH_DAYS, describe_filters, hidden_dirs, startup
+from .app import (KIND_CHOICES, KIND_NAMES, TRASH_DAYS, describe_filters, due_text, hidden_dirs, options_text,
+                  reminder_line, startup)
 from .images import pil_to_jpeg_bytes, to_jpeg_bytes
 from .importer import import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
-from .storage import (EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_LABELS, SORT_KEYS, Store, StorageError,
-                      is_safe_link)
+from .storage import (EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_LABELS, REMINDER_DAYS, SORT_KEYS, Store, StorageError,
+                      field_options, is_safe_link)
 from .ui import IMAGE_FILE_EXTS, TEXT_FILE_EXTS, find_files
 
 try:
@@ -99,6 +100,12 @@ def ask_text(title, message="", value=""):
     return console.input_alert(title, message, value or "", "OK")
 
 
+def ask_options(label, current):
+    """Ask the options of a choice field (raises KeyboardInterrupt when cancelled)."""
+    return ask_text("Options of '%s'" % label.strip()[:30], "Separated by commas, e.g. New, Good, Worn",
+                    options_text(current))
+
+
 def text_height(text, width, font):
     try:
         return ui.measure_string(text, max_width=width, font=font)[1]
@@ -139,12 +146,50 @@ def thumbnail(path, size=120):
 YES_NO = ["\u2013", "Yes", "No"]  # (first segment: no answer)
 
 
+NO_CHOICE = "\u2013  (none)"
+
+
 def widget_text(kind, field):
     """The value typed or chosen in an item editor input."""
     if kind == "yesno":
         index = field.selected_index
         return "" if index <= 0 else field.segments[index]
+    if kind == "choice":
+        return field.value
     return field.text
+
+
+class ChoiceButton(ui.View):
+    """Input of a "choice" field: shows the value, a tap opens the list."""
+
+    def __init__(self, value, options, label):
+        self.value = value or ""
+        self.options = options
+        self.label = label
+        self.button = link_button("", (8, 0, 300, 36), self.on_tap, TEXT)
+        self.button.flex = "W"
+        self.add_subview(self.button)
+        self.show()
+
+    def layout(self):
+        self.button.frame = (8, 0, self.width - 16, self.height)
+
+    def show(self):
+        self.button.subviews[0].text = (self.value or "\u2013") + "  \u203a"
+
+    @ui.on_main_thread
+    def show_on_main(self):
+        self.show()
+
+    @task
+    def on_tap(self, sender):
+        options = [NO_CHOICE] + self.options
+        if self.value and self.value not in self.options:  # (written before the list changed)
+            options.append(self.value)
+        index = choose(self.label, options)
+        if index is not None:
+            self.value = "" if index == 0 else options[index]
+            self.show_on_main()
 
 
 def link_button(title, frame, action, color=ACCENT):
@@ -285,9 +330,17 @@ class HomeScreen(TableScreen):
             })
         if not box_rows:
             box_rows.append({"title": "No boxes yet: tap + to create one", "color": MUTED})
+        due = store.due_reminders()
+        overdue = len([r for r in due if r["days"] < 0])
         self.show([
             ("", [{"title": "Search & filter", "subtitle": count_text(store, items),
-                   "on_tap": self.app.open_search}]),
+                   "on_tap": self.app.open_search},
+                  {"title": "Reminders" + (" (%d)" % len(due) if due else ""),
+                   "subtitle": ("%d overdue  \u00b7  " % overdue if overdue else "") + (
+                       "next: %s" % reminder_line(due[0]) if due else "nothing due in the next %d days"
+                       % REMINDER_DAYS),
+                   "color": DANGER if overdue else None,
+                   "on_tap": lambda: self.app.push(RemindersScreen(self.app))}]),
             ("Boxes (%d)" % len(counts_boxes), box_rows),
             ("Add", [
                 {"title": "Create Box", "on_tap": self.app.on_create_box, "accessory": "none", "color": ACCENT},
@@ -492,9 +545,12 @@ class ItemEditor(Screen):
         self.buttons(("Save", self.on_save))
         self._update_box_title()
 
-    def _add_widget(self, key, label, kind, value):
+    def _add_widget(self, key, label, kind, value, options=None):
         title = ui.Label(text=label.upper(), font=("<system>", 12), text_color=MUTED)
-        if kind == "text":
+        if kind == "choice":
+            field = ChoiceButton(value, options or [], label)
+            field.corner_radius = 6
+        elif kind == "text":
             field = ui.TextView(font=("<system>", 17), text=value or "")
             field.corner_radius = 6
         elif kind == "yesno":
@@ -517,8 +573,9 @@ class ItemEditor(Screen):
             elif kind == "number":
                 field.keyboard_type = ui.KEYBOARD_DECIMAL_PAD
                 field.placeholder = FIELD_KIND_HINTS["number"]
-            elif kind in ("date", "link"):
-                field.keyboard_type = ui.KEYBOARD_NUMBERS if kind == "date" else ui.KEYBOARD_URL
+            elif kind in ("date", "link", "reminder"):
+                field.keyboard_type = {"date": ui.KEYBOARD_NUMBERS, "link": ui.KEYBOARD_URL}.get(
+                    kind, ui.KEYBOARD_DEFAULT)
                 field.autocapitalization_type = ui.AUTOCAPITALIZE_NONE
                 field.autocorrection_type = False
                 field.placeholder = FIELD_KIND_HINTS[kind]
@@ -537,6 +594,7 @@ class ItemEditor(Screen):
             self.scroll.remove_subview(field)
         self.widgets = []
         store = self.app.store
+        item_type = store.get_type(self.type_id)
         same_type = bool(self.item_id) and self.type_id == store.item_type(self.item)["id"]
         rows = [("name", "name", "line", self.item.get("name"))]
         rows += store.item_fields(self.item, self.type_id, leftovers=same_type)
@@ -550,7 +608,8 @@ class ItemEditor(Screen):
             elif value is not None:
                 value = str(value)
             label = self.LABELS.get(key, FIELD_LABELS.get(key, label))
-            self._add_widget(key, label, "text" if kind == "links" else kind, value)
+            self._add_widget(key, label, "text" if kind == "links" else kind, value,
+                             field_options(item_type, label) if kind == "choice" else None)
         self.type_button.subviews[0].text = "Type: %s  \u203a" % store.get_type(self.type_id)["name"]
         self.layout()
 
@@ -608,7 +667,7 @@ class ItemEditor(Screen):
     @task
     def on_save(self, sender):
         for _key, kind, _title, field in self.widgets:
-            if kind != "yesno":
+            if kind not in ("yesno", "choice"):
                 field.end_editing()
         data = self.values()
         store = self.app.store
@@ -871,6 +930,46 @@ class BackupsScreen(TableScreen):
             self.app.refresh_all()
 
 
+class RemindersScreen(TableScreen):
+    """What is due in the next days, and what is overdue."""
+
+    def __init__(self, app):
+        TableScreen.__init__(self, app, "Reminders")
+        self.refresh()
+
+    def refresh(self):
+        overdue, soon = [], []
+        for reminder in self.app.store.due_reminders():
+            row = {"title": "%s  \u00b7  %s" % (reminder["item"]["name"], reminder["label"]),
+                   "subtitle": "%s  \u00b7  %s" % (due_text(reminder["days"]), reminder["value"]),
+                   "on_tap": functools.partial(self.on_reminder, reminder), "accessory": "none"}
+            if reminder["days"] < 0:
+                row["color"] = DANGER
+                overdue.append(row)
+            else:
+                soon.append(row)
+        note = ("Reminders are the item fields of kind 'Reminder' (e.g. Warranty until, Battery recharge, "
+                "Maintenance, Next payment). A date can repeat: '2026-11-01, every 3 months'. Tap one to "
+                "mark it done (a repeating one moves to its next date) or to open its item.")
+        sections = []
+        if overdue:
+            sections.append(("Overdue", overdue))
+        sections.append(("Next %d days" % REMINDER_DAYS, soon or [{"title": "Nothing due", "color": MUTED}]))
+        sections.append(("", [{"title": note, "color": MUTED, "lines": 0}]))
+        self.show(sections)
+
+    @task
+    def on_reminder(self, reminder):
+        actions = ["Done (%s)" % ("move to the next date" if reminder["repeats"] else "hide it"), "Open the item"]
+        index = choose(reminder_line(reminder), actions)
+        if index == 0:
+            value = self.app.store.reminder_done(reminder["item"]["id"], reminder["key"])
+            self.app.refresh_all()
+            hud("Next: %s" % value if reminder["repeats"] else "Done")
+        elif index == 1:
+            self.app.open_item(reminder["item"]["id"])
+
+
 class TypesScreen(TableScreen):
     """Item types: those that come with the app, then the user's own."""
 
@@ -932,7 +1031,8 @@ class TypeScreen(TableScreen):
         rows = [{"title": "Name", "subtitle": "always there", "color": MUTED}]
         for key, label, kind in item_type["fields"]:
             rows.append({"title": label, "subtitle": KIND_NAMES.get(kind, kind)
-                         + ("" if key.startswith(EXTRA_PREFIX) else "  \u00b7  standard field"),
+                         + ("" if key.startswith(EXTRA_PREFIX) else "  \u00b7  standard field")
+                         + (": %s" % options_text(field_options(item_type, label)) if kind == "choice" else ""),
                          "on_tap": functools.partial(self.on_field, key, label), "accessory": "none"})
         rows.append({"title": "Photos", "subtitle": "always there", "color": MUTED})
         rows.append({"title": "Add a field", "color": ACCENT, "on_tap": self.on_add_field, "accessory": "none"})
@@ -1010,9 +1110,12 @@ class TypeScreen(TableScreen):
     def on_field(self, key, label):
         store = self.app.store
         own = key.startswith(EXTRA_PREFIX)
+        kind = dict((k, kd) for k, _l, kd in store.get_type(self.type_id)["fields"]).get(key)
         options = ["Move up", "Move down", "Remove"]
         if own:
             options += ["Rename", "Change kind"]
+        if kind == "choice":
+            options.append("Edit the options")
         index = choose(label, options)
         if index in (0, 1):
             store.move_type_field(self.type_id, key, -1 if index == 0 else 1)
@@ -1023,21 +1126,35 @@ class TypeScreen(TableScreen):
             store.rename_type_field(self.type_id, key, ask_text("Rename field", "The values in the items are kept.",
                                                                   label))
         elif index == 4:
-            kind = dict((k, kd) for k, _l, kd in store.get_type(self.type_id)["fields"]).get(key)
             picked = choose("Kind of '%s' (now: %s)" % (label, KIND_NAMES.get(kind, kind)),
                             [text for _kind, text in KIND_CHOICES])
             if picked is None:
                 return
             new_kind = KIND_CHOICES[picked][0]
-            misfits = store.type_field_misfits(self.type_id, key, new_kind)
-            if misfits and not confirm("Change the kind?", "%d item(s) have a value that is not a valid %s; "
-                                       "it is kept as it is until you change it." % (misfits, KIND_NAMES[new_kind]),
-                                       "Change kind"):
+            choices = None
+            if new_kind == "choice":
+                choices = ask_options(label, store.known_options(label) or
+                                      store.type_field_values(self.type_id, key))
+            if not self._apply_kind(key, new_kind, choices):
                 return
-            store.set_type_field_kind(self.type_id, key, new_kind)
+        elif index == 5:
+            choices = ask_options(label, field_options(store.get_type(self.type_id), label))
+            if not self._apply_kind(key, "choice", choices):
+                return
         else:
             return
         self.app.refresh_all()
+
+    def _apply_kind(self, key, kind, choices=None):
+        """Ask if some values do not fit, then change (call from a task)."""
+        store = self.app.store
+        misfits = store.type_field_misfits(self.type_id, key, kind, choices)
+        if misfits and not confirm("Change the field?", "%d item(s) have a value that is not a valid %s; "
+                                   "it is kept as it is until you change it."
+                                   % (misfits, "option" if kind == "choice" else KIND_NAMES[kind]), "Change"):
+            return False
+        store.set_type_field_kind(self.type_id, key, kind, choices)
+        return True
 
 
 class FieldPickerScreen(Screen):
@@ -1108,7 +1225,8 @@ class FieldPickerScreen(Screen):
         kind = KIND_CHOICES[index][0]
         label = ask_text("Label of the new field", "%s, e.g. Players, Storage (GB), Warranty until"
                          % KIND_NAMES[kind], self.field.text or "")
-        self.app.store.add_type_field(self.type_id, label, kind)
+        choices = ask_options(label, self.app.store.known_options(label)) if kind == "choice" else None
+        self.app.store.add_type_field(self.type_id, label, kind, options=choices)
         self._done(label)
 
     def _done(self, label):
@@ -1195,7 +1313,7 @@ class TouchApp(object):
     def on_startup(self):
         messages = startup(self.store)
         if messages:
-            info("Data check", "\n\n".join(messages))
+            info("Stuff", "\n\n".join(messages))
         self.refresh_all()
 
     # ------------------------------------------------------- navigation

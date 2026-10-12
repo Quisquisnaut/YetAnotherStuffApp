@@ -98,17 +98,19 @@ Type Editor: Home > Item types (text menus: main menu > Item types), then
 tap a type. A new type opens in the Type Editor right away.
 - Add a field: a search box at the top and, below it, "New field..."
   and the fields you can add, grouped: Standard details (Price, Brand...),
-  ready-made fields (General, Electronics & IT, Books & media, Clothes &
+  ready-made fields (General, Reminders, Electronics & IT, Books & media,
+  Sports & hobbies, Tools & DIY, Subscriptions, Documents, Clothes &
   shoes, Furniture & home, Plants, Vehicles, Cards & keys) and the fields
   of your own types. Each shows its kind. Type in the search box (e.g.
   "GB", "date", "color") to narrow the list; tap a field to add it.
   Text menus: type a search (or just Enter), then the number.
 - New field...: choose its kind, then type its label (e.g. "Players").
+  A Choice from a list also asks for its options, separated by commas.
 - Remove a field: pick the field from the list (or tap a field > Remove).
   It asks for confirmation and tells you how many items have a value for
   it; those values are deleted (a backup can bring them back).
 - Tap a field to move it up or down, rename your own fields (values are
-  kept) or change their kind.
+  kept) or change their kind; for a Choice from a list, edit its options.
 - Rename the type.
 - Make a copy: a new type that starts with the same fields.
 - Delete a type: only when no item has it any more. Generic cannot be
@@ -128,6 +130,11 @@ Kinds of field and how to fill them in:
 - Year: a 4-digit year such as 1965.
 - Price (EUR): like the paid price, e.g. 12.50.
 - Web link: https://... (shown as a link you can open).
+- Choice from a list: one of the field's options (tap the field to pick;
+  text menus: type it, any case). E.g. Condition: New, Like new, Good...
+- Reminder: a date the app reminds you of (see "Reminders"); it can
+  repeat: "2026-11-01, every 3 months" (also every week, every 2 years,
+  monthly, yearly...).
 Values are checked when you save. If you change a field's kind, values
 that fit are converted (e.g. "y" becomes Yes); values that do not fit are
 kept as they are and shown, and you are told how many there are.
@@ -138,6 +145,32 @@ value for a field its type no longer has, the value is still shown so
 nothing is hidden; you can clear it."""),
 
     ("Fields of the types that come with the app", None),
+
+    ("Reminders", """\
+Fields of kind Reminder are dates the app reminds you of, e.g. Warranty
+until, Battery recharge, Maintenance, Replacement, Cleaning, Next
+service, Next payment and Expiration date (subscriptions), Valid until,
+Points expire, Keep until (documents). Device, Gadget, Clothes, Shoe,
+Appliance, IoT, Sportsgear and DIY have some of them; add them to any
+type in the Type Editor (group "Reminders"), or make your own (New
+field... > Reminder).
+
+Write the date, and if it repeats how often:
+- 2026-12-31 (once; also 31/12/2026, or just 2026-12)
+- 2026-11-01, every 3 months  (every day / week / month / year, every 2
+  weeks...; also daily, weekly, monthly, quarterly, yearly)
+
+Home > Reminders (text menus: main menu > Reminders) lists what is due in
+the next 30 days and what is overdue, soonest first; the number is shown
+on the Home screen and in the main menu, and what is due within a week
+is shown when the app starts. Tap a reminder to:
+- Done: a repeating reminder moves to its next date after today (e.g.
+  battery recharged, subscription paid); a one-off one gets ", done" and
+  is no longer listed.
+- Open the item.
+One-off reminders that passed more than 30 days ago are no longer listed
+(e.g. an ended warranty); repeating ones stay until they are done.
+The app has no phone notifications: open it to see your reminders."""),
 
     ("Photos", """\
 Photos must be JPEG (.jpg / .jpeg). With the Pillow library installed

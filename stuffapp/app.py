@@ -9,8 +9,8 @@ import os
 from . import backup, config, export, guide
 from .importer import import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
-from .storage import (EXTRA_KINDS, EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_KIND_NAMES, FIELD_LABELS, SORT_KEYS,
-                      StorageError)
+from .storage import (EXTRA_KINDS, EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_KIND_NAMES, FIELD_LABELS, REMINDER_DAYS,
+                      SORT_KEYS, StorageError, field_options)
 from .ui import Cancelled
 
 TRASH_DAYS = 30
@@ -49,10 +49,35 @@ def field_choice_label(choice):
     return "%s (%s)" % (label, KIND_NAMES.get(kind, kind))
 
 
-def field_form_label(label, kind):
+def field_form_label(label, kind, options=None):
     """Label of a type's own field in a form, with a hint for its kind."""
     hint = FIELD_KIND_HINTS.get(kind)
+    if kind == "choice" and options:
+        hint = "one of: %s" % " / ".join(options)
     return "%s (%s)" % (label, hint) if hint else label
+
+
+def due_text(days):
+    """ "today", "in 3 days", "2 days ago" ..."""
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "tomorrow"
+    if days == -1:
+        return "yesterday"
+    return "in %d days" % days if days > 0 else "%d days ago" % -days
+
+
+def reminder_line(reminder, show_item=True):
+    """One reminder of ``Store.due_reminders`` as text."""
+    text = "%s: %s (%s)" % (reminder["label"], due_text(reminder["days"]), reminder["value"])
+    if show_item:
+        text = "%s - %s" % (reminder["item"]["name"], text)
+    return ("OVERDUE " if reminder["days"] < 0 else "") + text
+
+
+def options_text(options):
+    return ", ".join(options)
 
 
 def type_label(item_type, counts=None):
@@ -94,6 +119,10 @@ def startup(store):
     except (OSError, StorageError) as exc:
         messages.append("Automatic backup failed: %s" % exc)
     store.purge_trash(older_than_days=TRASH_DAYS)
+    soon = [r for r in store.due_reminders() if r["days"] <= 7]
+    if soon:
+        messages.append("Reminders due within a week (or overdue): %d - see 'Reminders'.\n  %s"
+                        % (len(soon), "\n  ".join(reminder_line(r) for r in soon[:10])))
     return messages
 
 
@@ -121,14 +150,42 @@ class App(object):
             ("Trash (recently deleted)", self.trash_menu),
             ("Backups", self.backups_menu),
             ("Item types", self.types_menu),
+            ("Reminders", self.reminders_menu),
             ("Settings: data folder", self.settings),
             ("Help", self.help_menu),
         ]
         while True:
-            index = self.ui.choose("Stuff - main menu", [a[0] for a in actions])
+            count = len(self.store.due_reminders())
+            labels = [a[0] if a[1] != self.reminders_menu or not count else "Reminders (%d due)" % count
+                      for a in actions]
+            index = self.ui.choose("Stuff - main menu", labels)
             if index is None:
                 return
             self._safe(actions[index][1])
+
+    def reminders_menu(self):
+        """What is due in the next days (and overdue): pick one to mark it
+        done or to open its item."""
+        while True:
+            due = self.store.due_reminders()
+            if not due:
+                self.ui.message("Nothing due in the next %d days. Reminders are the fields of kind "
+                                "'Reminder' (e.g. Warranty until, Battery recharge, Next payment)."
+                                % REMINDER_DAYS)
+                return
+            index = self.ui.choose("Reminders - next %d days and overdue" % REMINDER_DAYS,
+                                   [reminder_line(r) for r in due])
+            if index is None:
+                return
+            reminder = due[index]
+            action = self.ui.choose(reminder_line(reminder), [
+                "Done (%s)" % ("move to the next date" if reminder["repeats"] else "hide it"),
+                "Open the item"])
+            if action == 0:
+                value = self.store.reminder_done(reminder["item"]["id"], reminder["key"])
+                self.ui.message("%s: %s" % (reminder["label"], value))
+            elif action == 1:
+                self.item_menu(reminder["item"]["id"])
 
     def help_menu(self):
         while True:
@@ -187,10 +244,12 @@ class App(object):
         wanted) the less common standard details."""
         item = item or {}
         rows = self.store.item_fields(item, type_id if not item else None)
+        item_type = self.store.item_type(item) if item else self.store.get_type(type_id)
         main = [("name", "Name", item.get("name", ""))]
         more = []
         for key, label, kind, value in rows:
-            shown = FORM_LABELS.get(key) or (field_form_label(label, kind) if key.startswith(EXTRA_PREFIX) else label)
+            shown = FORM_LABELS.get(key) or (field_form_label(label, kind, field_options(item_type, label))
+                                             if key.startswith(EXTRA_PREFIX) else label)
             entry = (key, shown, form_value(kind, value))
             (more if key in MORE_DETAILS else main).append(entry)
         data = self.ui.form(title, main)
@@ -455,7 +514,13 @@ class App(object):
         if kind is None:
             return
         name = self.ui.form("New field", [("name", "Label (e.g. Players, Storage (GB))", "")])["name"]
-        self.store.add_type_field(type_id, name, KIND_CHOICES[kind][0])
+        kind = KIND_CHOICES[kind][0]
+        options = self._ask_options(name, self.store.known_options(name)) if kind == "choice" else None
+        self.store.add_type_field(type_id, name, kind, options=options)
+
+    def _ask_options(self, label, current):
+        return self.ui.form("Options of '%s'" % label, [
+            ("options", "Options, separated by commas (e.g. New, Good, Worn)", options_text(current))])["options"]
 
     def _change_kind(self, type_id, key, label, kind):
         index = self.ui.choose("Kind of '%s' (now: %s)" % (label, KIND_NAMES.get(kind, kind)),
@@ -463,12 +528,19 @@ class App(object):
         if index is None:
             return
         new_kind = KIND_CHOICES[index][0]
-        misfits = self.store.type_field_misfits(type_id, key, new_kind)
+        options = None
+        if new_kind == "choice":
+            options = self._ask_options(label, self.store.known_options(label) or
+                                        self.store.type_field_values(type_id, key))
+        self._apply_kind(type_id, key, new_kind, options)
+
+    def _apply_kind(self, type_id, key, kind, options=None):
+        misfits = self.store.type_field_misfits(type_id, key, kind, options)
         if misfits and not self.ui.confirm(
                 "%d item(s) have a value that is not a valid %s; it is kept as it is until you change it. "
-                "Continue?" % (misfits, KIND_NAMES[new_kind])):
+                "Continue?" % (misfits, "option" if kind == "choice" else KIND_NAMES[kind])):
             return
-        self.store.set_type_field_kind(type_id, key, new_kind)
+        self.store.set_type_field_kind(type_id, key, kind, options)
 
     def remove_field(self, type_id):
         fields = self.store.get_type(type_id)["fields"]
@@ -500,6 +572,9 @@ class App(object):
         actions = ["Move up", "Move down", "Remove"]
         if own:
             actions += ["Rename", "Change kind (now: %s)" % KIND_NAMES.get(kind, kind)]
+        if kind == "choice":
+            actions.append("Edit the options (now: %s)" % options_text(
+                field_options(self.store.get_type(type_id), label)))
         action = self.ui.choose("Field '%s'" % label, actions)
         if action in (0, 1):
             self.store.move_type_field(type_id, key, -1 if action == 0 else 1)
@@ -510,6 +585,9 @@ class App(object):
             self.store.rename_type_field(type_id, key, name)
         elif action == 4:
             self._change_kind(type_id, key, label, kind)
+        elif action == 5:
+            options = self._ask_options(label, field_options(self.store.get_type(type_id), label))
+            self._apply_kind(type_id, key, "choice", options)
 
     def reset_type(self, type_id):
         item_type = self.store.get_type(type_id)

@@ -47,7 +47,7 @@ import re
 from .images import import_image_file
 from .itemtypes import GENERIC
 from .storage import (EXTRA_PREFIX, FIELD_LABELS, LINE_FIELDS, STANDARD_KEYS, TEXT_FIELDS, StorageError,
-                      clean_field_value)
+                      clean_field_value, field_options)
 
 KEY_ALIASES = {
     "name": "name",
@@ -273,7 +273,7 @@ def _fit_to_type(store, fields, item_type, warnings):
             outside.append((str(name), value))
             continue
         try:
-            data["extra"][match[1]] = clean_field_value(match[2], value)
+            data["extra"][match[1]] = clean_field_value(match[2], value, field_options(item_type, match[1]))
         except StorageError as exc:
             bad.append((match[1], value, str(exc)))
     lost = outside + [(label, value) for label, value, _reason in bad]

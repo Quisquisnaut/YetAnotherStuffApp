@@ -31,7 +31,7 @@ import os
 import re
 import shutil
 import uuid
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from .itemtypes import BUNDLED_IDS, GENERIC, PRESET_FIELDS
 
@@ -70,16 +70,26 @@ ITEM_FIELDS = tuple(key for key, _label, _kind in ITEM_FIELD_SPECS) + ("images",
 EXTRA_PREFIX = "extra:"  # field key of a type's own field: "extra:<name>"
 # Kinds of field a type's own fields can have (all values are kept as text,
 # checked and written in one format when entered: see clean_field_value).
-EXTRA_KINDS = ("line", "text", "number", "yesno", "date", "year", "price", "link")
+# A "choice" field has a list of options (the type's ``options``); a
+# "reminder" is a date the app reminds you of, which can repeat.
+EXTRA_KINDS = ("line", "text", "number", "yesno", "date", "year", "price", "link", "choice", "reminder")
 FIELD_KIND_NAMES = {
     "line": "Text (one line)", "text": "Text (several lines)", "number": "Number",
     "yesno": "Yes / No", "date": "Date", "year": "Year", "price": "Price (\u20ac)",
-    "link": "Web link", "links": "Web links",
+    "link": "Web link", "links": "Web links", "choice": "Choice from a list",
+    "reminder": "Reminder (date, can repeat)",
 }
 FIELD_KIND_HINTS = {
     "number": "e.g. 16 or 2.5", "yesno": "Yes or No", "date": "YYYY-MM-DD (or YYYY-MM, YYYY)",
     "year": "e.g. 2023", "price": "e.g. 12.50", "link": "https://...",
+    "reminder": "YYYY-MM-DD, or e.g. 2026-11-01 every 3 months",
 }
+MAX_OPTIONS = 60
+MAX_OPTION = 60
+REMINDER_UNITS = ("day", "week", "month", "year")
+MAX_REPEAT = 999
+REMINDER_DAYS = 30  # the reminders list shows what is due in the next REMINDER_DAYS days
+EXPIRED_DAYS = 30  # ...and one-off reminders that passed less than EXPIRED_DAYS ago
 STANDARD_GROUP = "Standard details"
 OWN_FIELDS_GROUP = "Fields of your types"
 MAX_FIELD_VALUE = 10000
@@ -183,11 +193,102 @@ def _parse_date(text):
     return "%s-%02d" % (year, int(month)) if month else year
 
 
-def clean_field_value(kind, value):
+_REPEAT_WORDS = {"daily": (1, "day"), "weekly": (1, "week"), "fortnightly": (2, "week"),
+                 "monthly": (1, "month"), "quarterly": (3, "month"), "yearly": (1, "year"),
+                 "annually": (1, "year")}
+_REPEAT_RE = re.compile(r"^(?:repeat(?:s|ing)?\s+)?every\s+(?:([0-9]+)\s*)?(day|week|month|year)s?$")
+
+
+def parse_reminder(text):
+    """``(date text, every, unit, done)`` of a reminder value such as
+    "2026-11-01", "2026-11-01, every 3 months" or "2027-05, done" (``every``
+    is 0 when it does not repeat). Raises StorageError."""
+    text = " ".join(_clean_str(text).replace(";", ",").split())
+    match = re.match(r"^([^\s,]+)\s*,?\s*(.*)$", text)
+    if not match:
+        raise StorageError("write a date, e.g. 2026-11-01")
+    day = _parse_date(match.group(1))
+    rest = match.group(2).lower().strip(" ,")
+    done = False
+    if rest == "done" or rest.endswith(" done") or rest.endswith(",done"):
+        done = True
+        rest = rest[:-4].strip(" ,")
+    every, unit = 0, ""
+    if rest:
+        repeat = _REPEAT_RE.match(rest)
+        if repeat:
+            every, unit = int(repeat.group(1) or 1), repeat.group(2)
+        elif rest in _REPEAT_WORDS:
+            every, unit = _REPEAT_WORDS[rest]
+        else:
+            raise StorageError("write the date, then (if it repeats) e.g. 'every 3 months'")
+        if not 1 <= every <= MAX_REPEAT:
+            raise StorageError("repeat every 1 to %d days, weeks, months or years" % MAX_REPEAT)
+        if len(day) != 10:
+            raise StorageError("a repeating reminder needs a full date (YYYY-MM-DD)")
+        if done:
+            raise StorageError("a repeating reminder is never done: change its date instead")
+    return day, every, unit, done
+
+
+def format_reminder(day, every=0, unit="", done=False):
+    text = day
+    if every:
+        text += ", every %s" % (unit if every == 1 else "%d %ss" % (every, unit))
+    return text + (", done" if done else "")
+
+
+def reminder_date(day):
+    """The day a reminder date ("2026-11-01", "2026-11" or "2026") is due."""
+    parts = [int(p) for p in day.split("-")] + [1, 1]
+    return date(parts[0], parts[1], parts[2])
+
+
+def add_period(day, every, unit):
+    """``day`` (a date) plus ``every`` days, weeks, months or years (the
+    day of the month is kept when it exists, else the month's last day)."""
+    if unit in ("day", "week"):
+        return day + timedelta(days=every * (7 if unit == "week" else 1))
+    months = day.month - 1 + every * (12 if unit == "year" else 1)
+    year, month = day.year + months // 12, months % 12 + 1
+    for last in (day.day, 30, 29, 28):
+        try:
+            return date(year, month, min(day.day, last))
+        except ValueError:
+            continue
+
+
+def clean_options(options, strict=True):
+    """The options of a "choice" field: a list or a text with one option
+    per line (or separated by commas). Cleaned, without repeats."""
+    if isinstance(options, str):
+        options = options.split("\n") if "\n" in options.strip() else re.split(r"[,;]", options)
+    result = []
+    for option in options if isinstance(options, (list, tuple)) else []:
+        option = _one_line(option) if isinstance(option, str) else ""
+        if not option or option.lower() in [o.lower() for o in result]:
+            continue
+        if len(option) > MAX_OPTION:
+            if strict:
+                raise StorageError("An option can have at most %d characters." % MAX_OPTION)
+            continue
+        result.append(option)
+    if len(result) > MAX_OPTIONS:
+        if strict:
+            raise StorageError("A list can have at most %d options." % MAX_OPTIONS)
+        result = result[:MAX_OPTIONS]
+    if not result and strict:
+        raise StorageError("A choice field needs at least one option.")
+    return result
+
+
+def clean_field_value(kind, value, options=None):
     """Check the value of a field of kind ``kind`` and return it as text in
     one format ("" when empty): numbers "2.5", yes/no "Yes" / "No", dates
     "2025-03-31" (also "2025-03" or "2025"), years "2023", prices "12.50",
-    links "https://...". Raises StorageError with a short explanation."""
+    links "https://...", choices one of ``options`` (spelled as there),
+    reminders "2026-11-01, every 3 months". Raises StorageError with a
+    short explanation."""
     if value is None or isinstance(value, bool) or not isinstance(value, (str, int, float)):
         if value is None:
             return ""
@@ -213,6 +314,16 @@ def clean_field_value(kind, value):
         return str(parse_year(text))
     if kind == "price":
         return "%.2f" % parse_price(text)
+    if kind == "choice":
+        for option in options or []:
+            if option.lower() == text.lower():
+                return option
+        if options:
+            shown = options if len(options) <= 12 else options[:12] + ["..."]
+            raise StorageError("choose one of: %s" % ", ".join(shown))
+        return text
+    if kind == "reminder":
+        return format_reminder(*parse_reminder(text))
     if kind == "link":
         if " " in text:
             raise StorageError("a web link has no spaces")
@@ -224,10 +335,10 @@ def clean_field_value(kind, value):
     return text
 
 
-def value_fits(kind, value):
+def value_fits(kind, value, options=None):
     """True if a stored value is in the format of its field's kind."""
     try:
-        return clean_field_value(kind, value) == _clean_str(value)
+        return clean_field_value(kind, value, options) == _clean_str(value)
     except StorageError:
         return False
 
@@ -266,10 +377,18 @@ def _has_value(value):
 
 
 def _clean_type_fields(fields, strict=True):
+    """``_parse_type_fields`` without the options."""
+    return _parse_type_fields(fields, strict)[0]
+
+
+def _parse_type_fields(fields, strict=True):
     """Check a type's field list (standard keys and ``{"name", "kind"}``
-    entries) and return it as ``[(key, label, kind)]``. With ``strict``
-    False, bad entries are skipped instead of raising StorageError."""
+    entries; "choice" fields also have ``"options"``) and return it as
+    ``([(key, label, kind)], {lower-case label: [options]})``. With
+    ``strict`` False, bad entries are skipped instead of raising
+    StorageError (a choice field without options becomes one-line text)."""
     result = []
+    options = {}
     seen = set()
     for entry in fields if isinstance(fields, (list, tuple)) else []:
         try:
@@ -283,6 +402,12 @@ def _clean_type_fields(fields, strict=True):
                 if kind not in EXTRA_KINDS:
                     raise StorageError("Unknown kind of field %r (use one of: %s)."
                                        % (kind, ", ".join(EXTRA_KINDS)))
+                if kind == "choice":
+                    choices = clean_options(entry.get("options"), strict)
+                    if choices:
+                        options[label.lower()] = choices
+                    else:
+                        kind = "line"
                 key = EXTRA_PREFIX + label
             else:
                 raise StorageError("Invalid field: %r" % (entry,))
@@ -298,12 +423,30 @@ def _clean_type_fields(fields, strict=True):
         if strict:
             raise StorageError("A type can have at most %d fields." % MAX_TYPE_FIELDS)
         result = result[:MAX_TYPE_FIELDS]
+    labels = set(label.lower() for _key, label, kind in result if kind == "choice")
+    return result, dict((k, v) for k, v in options.items() if k in labels)
+
+
+def _fields_to_json(fields, options=None):
+    result = []
+    for key, label, kind in fields:
+        if not key.startswith(EXTRA_PREFIX):
+            result.append(key)
+        elif kind == "choice":
+            result.append({"name": label, "kind": kind, "options": list((options or {}).get(label.lower(), []))})
+        else:
+            result.append({"name": label, "kind": kind})
     return result
 
 
-def _fields_to_json(fields):
-    return [key if not key.startswith(EXTRA_PREFIX) else {"name": label, "kind": kind}
-            for key, label, kind in fields]
+def field_options(item_type, label):
+    """The options of a choice field of a type (``[]`` if none)."""
+    return list((item_type.get("options") or {}).get(label.lower(), []))
+
+
+def _copy_type(item_type):
+    return dict(item_type, fields=list(item_type["fields"]),
+                options=dict((k, list(v)) for k, v in (item_type.get("options") or {}).items()))
 
 
 _bundled_cache = []
@@ -315,9 +458,10 @@ def bundled_types():
         from .itemtypes import BUNDLED_TYPES
 
         for type_id, name, fields in BUNDLED_TYPES:
+            fields, options = _parse_type_fields(fields)
             _bundled_cache.append({"id": type_id, "name": name, "bundled": True,
-                                   "fields": _clean_type_fields(fields)})
-    return [dict(t, fields=list(t["fields"])) for t in _bundled_cache]
+                                   "fields": fields, "options": options})
+    return [_copy_type(t) for t in _bundled_cache]
 
 
 def _one_line(value):
@@ -691,6 +835,7 @@ class Store(object):
             raise StorageError("The type's fields must be given as {name: value}.")
         own = dict((label.lower(), (label, kind)) for key, label, kind in item_type["fields"]
                    if key.startswith(EXTRA_PREFIX))
+        options = item_type.get("options") or {}
         values = {}
         for name, value in extra.items():
             if not isinstance(name, str) or not _one_line(name) or len(_one_line(name)) > MAX_FIELD_NAME:
@@ -700,7 +845,7 @@ class Store(object):
             label, kind = own.get(_one_line(name).lower(), (_one_line(name), "text"))
             if check is True or label.lower() in check:
                 try:
-                    value = clean_field_value(kind, value)
+                    value = clean_field_value(kind, value, options.get(label.lower()))
                 except StorageError as exc:
                     raise StorageError("%s: %s." % (label, exc))
             else:
@@ -881,6 +1026,58 @@ class Store(object):
         self._write(self._item_path(item_id), item)
         return item
 
+    # ----------------------------------------------------------- reminders
+    def due_reminders(self, days=REMINDER_DAYS, today=None):
+        """The reminders (values of "reminder" fields) due in the next
+        ``days`` days or overdue, soonest first, as dicts: ``item``,
+        ``key``, ``label``, ``value``, ``date`` (a ``datetime.date``),
+        ``days`` (days left, negative when overdue) and ``repeats``.
+        Repeating reminders stay until they are marked done (see
+        ``reminder_done``); one-off ones until they are marked done or
+        passed more than EXPIRED_DAYS days ago."""
+        today = today or date.today()
+        result = []
+        for item in self.list_items():
+            for key, label, kind in self.item_type(item)["fields"]:
+                value = self.field_value(item, key) if kind == "reminder" else ""
+                if not value:
+                    continue
+                try:
+                    day, every, _unit, done = parse_reminder(value)
+                except StorageError:
+                    continue  # (written before the field became a reminder)
+                left = (reminder_date(day) - today).days
+                if done or left > days or (not every and left < -EXPIRED_DAYS):
+                    continue
+                result.append({"item": item, "key": key, "label": label, "value": value,
+                               "date": reminder_date(day), "days": left, "repeats": bool(every)})
+        result.sort(key=lambda r: (r["date"], r["item"]["name"].lower(), r["label"].lower()))
+        return result
+
+    def reminder_done(self, item_id, key, today=None):
+        """Mark a reminder of an item as done: a repeating one moves to its
+        next date after today, a one-off one gets ", done" (it is no longer
+        shown in the reminders list). Returns the new value."""
+        today = today or date.today()
+        item = self.get_item(item_id)
+        item_type = self.item_type(item)
+        _key, label, kind = item_type["fields"][self._field_index(item_type, key)]
+        if kind != "reminder":
+            raise StorageError("'%s' is not a reminder." % label)
+        try:
+            day, every, unit, _done = parse_reminder(self.field_value(item, key))
+        except StorageError as exc:
+            raise StorageError("%s: %s." % (label, exc))
+        if every:
+            start, count = reminder_date(day), 1
+            while add_period(start, every * count, unit) <= today:
+                count += 1
+            value = format_reminder(add_period(start, every * count, unit).isoformat(), every, unit)
+        else:
+            value = format_reminder(day, done=True)
+        self.update_item(item_id, extra={label: value})
+        return value
+
     # --------------------------------------------------------------- types
     def _load_types_file(self):
         """``(stored types, ids of deleted bundled types)`` from
@@ -909,12 +1106,13 @@ class Store(object):
                     continue
                 ids.add(type_id)
                 names.add(name.lower())
+                fields, options = _parse_type_fields(raw.get("fields"), strict=False)
                 stored.append({"id": type_id, "name": name, "bundled": type_id in BUNDLED_IDS,
-                               "fields": _clean_type_fields(raw.get("fields"), strict=False)})
+                               "fields": fields, "options": options})
             removed = data.get("removed") if isinstance(data.get("removed"), list) else []
             removed = [r for r in BUNDLED_IDS if r in removed and r != GENERIC and r not in ids]
             self._types_cache = (stamp, stored, removed)
-        return [dict(t, fields=list(t["fields"])) for t in self._types_cache[1]], list(self._types_cache[2])
+        return [_copy_type(t) for t in self._types_cache[1]], list(self._types_cache[2])
 
     def _load_user_types(self):
         """The stored types: the user's own and the changed bundled ones."""
@@ -925,7 +1123,8 @@ class Store(object):
             removed = self._load_types_file()[1]
         self._types_cache = (None, [], [])
         self._write(self.types_path, {"id": "types", "types": [
-            {"id": t["id"], "name": t["name"], "fields": _fields_to_json(t["fields"])} for t in types],
+            {"id": t["id"], "name": t["name"], "fields": _fields_to_json(t["fields"], t.get("options"))}
+            for t in types],
             "removed": [r for r in BUNDLED_IDS if r in removed]})
 
     def list_types(self):
@@ -1014,8 +1213,8 @@ class Store(object):
         groups = [(STANDARD_GROUP, [(key, FIELD_LABELS[key], FIELD_KINDS[key]) for key in STANDARD_KEYS])]
         known = set(STANDARD_KEYS)
         for group, fields in PRESET_FIELDS:
-            groups.append((group, [(EXTRA_PREFIX + name, name, kind) for name, kind in fields]))
-            known.update((EXTRA_PREFIX + name).lower() for name, _kind in fields)
+            groups.append((group, [(EXTRA_PREFIX + f[0], f[0], f[1]) for f in fields]))
+            known.update((EXTRA_PREFIX + f[0]).lower() for f in fields)
         others = {}
         for item_type in self.list_types() + bundled_types():
             for key, label, kind in item_type["fields"]:
@@ -1065,7 +1264,7 @@ class Store(object):
                 return types, item_type
         item_type = self.get_type(type_id)
         item_type = {"id": item_type["id"], "name": item_type["name"], "bundled": True,
-                     "fields": list(item_type["fields"])}
+                     "fields": list(item_type["fields"]), "options": _copy_type(item_type)["options"]}
         types.append(item_type)
         return types, item_type
 
@@ -1074,11 +1273,12 @@ class Store(object):
         ``{"name", "kind"}`` dicts; ``based_on`` copies another type's fields."""
         name = self._check_type_name(name)
         if based_on:
-            resolved = list(self.get_type(based_on)["fields"])
+            source = _copy_type(self.get_type(based_on))
+            resolved, options = source["fields"], source["options"]
         else:
-            resolved = _clean_type_fields(fields or [])
+            resolved, options = _parse_type_fields(fields or [])
         types = self._load_user_types()
-        new = {"id": _new_id(), "name": name, "bundled": False, "fields": resolved}
+        new = {"id": _new_id(), "name": name, "bundled": False, "fields": resolved, "options": options}
         types.append(new)
         self._save_user_types(types)
         return new
@@ -1114,15 +1314,30 @@ class Store(object):
                 return index
         raise StorageError("The type '%s' has no field %s." % (item_type["name"], key))
 
-    def add_type_field(self, type_id, field, kind="line"):
+    def known_options(self, label):
+        """The options of a choice field called ``label`` among the
+        ready-made fields and the fields of the types (``[]`` if none)."""
+        for item_type in self.list_types() + bundled_types():
+            if field_options(item_type, label):
+                return field_options(item_type, label)
+        return []
+
+    def _set_fields(self, item_type, fields):
+        item_type["fields"], item_type["options"] = _parse_type_fields(fields)
+
+    def add_type_field(self, type_id, field, kind="line", options=None):
         """Add a standard field (its key, e.g. "price"), a field key from
         ``field_choices`` or a new own field (its name, with ``kind`` one of
-        EXTRA_KINDS) to a type. Returns the field key."""
+        EXTRA_KINDS; a "choice" field also needs ``options``, else those of
+        a known field with that name are used) to a type. Returns the field
+        key."""
         types, item_type = self._user_type(type_id)
         if isinstance(field, str) and field.startswith(EXTRA_PREFIX):
             field = field[len(EXTRA_PREFIX):]  # a field key from field_choices()
         entry = field if field in STANDARD_KEYS else {"name": field, "kind": kind}
-        item_type["fields"] = _clean_type_fields(_fields_to_json(item_type["fields"]) + [entry])
+        if kind == "choice" and isinstance(entry, dict):
+            entry["options"] = options if options is not None else self.known_options(_one_line(field))
+        self._set_fields(item_type, _fields_to_json(item_type["fields"], item_type["options"]) + [entry])
         self._save_user_types(types)
         return item_type["fields"][-1][0]
 
@@ -1161,9 +1376,9 @@ class Store(object):
         key, _label, kind = item_type["fields"][index]
         if not key.startswith(EXTRA_PREFIX):
             raise StorageError("Standard fields cannot be renamed.")
-        fields = _fields_to_json(item_type["fields"])
-        fields[index] = {"name": new_name, "kind": kind}
-        item_type["fields"] = _clean_type_fields(fields)
+        fields = _fields_to_json(item_type["fields"], item_type["options"])
+        fields[index] = dict(fields[index], name=new_name)
+        self._set_fields(item_type, fields)
         new_name = item_type["fields"][index][1]
         self._save_user_types(types)
         old = key[len(EXTRA_PREFIX):].lower()
@@ -1174,34 +1389,63 @@ class Store(object):
                 self._write(self._item_path(item["id"]), item)
         return EXTRA_PREFIX + new_name
 
-    def type_field_misfits(self, type_id, key, kind):
+    def type_field_values(self, type_id, key):
+        """The different values of field ``key`` in the items of a type."""
+        values = []
+        for item in self.type_items(type_id):
+            value = _one_line(self.field_value(item, key))
+            if value and value.lower() not in [v.lower() for v in values]:
+                values.append(value)
+        return sorted(values, key=lambda v: v.lower())[:MAX_OPTIONS]
+
+    def type_field_misfits(self, type_id, key, kind, options=None):
         """Number of items of a type whose value of field ``key`` is not in
-        the format of ``kind`` (they are kept as they are)."""
+        the format of ``kind`` (or not one of ``options``; they are kept as
+        they are)."""
+        if options is not None:
+            options = clean_options(options, strict=False)
         count = 0
         for item in self.type_items(type_id):
             value = self.field_value(item, key)
-            if _has_value(value) and not value_fits(kind, value):
+            if _has_value(value) and not value_fits(kind, value, options):
                 count += 1
         return count
 
-    def set_type_field_kind(self, type_id, key, kind):
-        """Change the kind of one of a type's own fields. Values that fit
-        the new kind are written in its format; the others are kept as they
-        are (see ``type_field_misfits``) and checked when changed."""
+    def set_type_field_kind(self, type_id, key, kind, options=None):
+        """Change the kind of one of a type's own fields (a "choice" also
+        needs ``options``). Values that fit the new kind are written in its
+        format; the others are kept as they are (see
+        ``type_field_misfits``) and checked when changed."""
         types, item_type = self._user_type(type_id)
         index = self._field_index(item_type, key)
-        fields = _fields_to_json(item_type["fields"])
+        fields = _fields_to_json(item_type["fields"], item_type["options"])
         if not isinstance(fields[index], dict):
             raise StorageError("Only the type's own fields can be changed.")
         fields[index]["kind"] = kind
-        item_type["fields"] = _clean_type_fields(fields)
+        if kind == "choice":
+            fields[index]["options"] = options if options is not None else fields[index].get("options", [])
+        else:
+            fields[index].pop("options", None)
+        self._set_fields(item_type, fields)
         self._save_user_types(types)
+        self._refit_values(type_id, key, kind, field_options(item_type, item_type["fields"][index][1]))
+
+    def set_type_field_options(self, type_id, key, options):
+        """Change the options of a choice field. Values that are one of the
+        new options get its spelling; the others are kept as they are."""
+        item_type = self.get_type(type_id)
+        kind = item_type["fields"][self._field_index(item_type, key)][2]
+        if kind != "choice":
+            raise StorageError("Only a 'Choice from a list' field has options.")
+        self.set_type_field_kind(type_id, key, "choice", options)
+
+    def _refit_values(self, type_id, key, kind, options):
         name = key[len(EXTRA_PREFIX):].lower()
         for item in self.type_items(type_id):
             for other, value in list((item.get("extra") or {}).items()):
-                if other.lower() == name and value_fits(kind, value) is False:
+                if other.lower() == name and value_fits(kind, value, options) is False:
                     try:
-                        fixed = clean_field_value(kind, value)
+                        fixed = clean_field_value(kind, value, options)
                     except StorageError:
                         continue
                     item["extra"][other] = fixed
