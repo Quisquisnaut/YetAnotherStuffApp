@@ -54,8 +54,11 @@ English guides to every feature.
   - Bundled types: **Book, Furniture, Device, Gadget, Media, Plant, Appliance, Shoe,
     Clothes, Vehicle, Card, Key**. Each has the useful standard details plus its own
     fields (see "Fields of the bundled types" below).
-  - **Every type can be changed**, the bundled ones too: rename it, add standard fields
-    or your own fields (one line or several lines), move, rename or remove fields, make a
+  - **Every type can be changed** in the **Type Editor**, the bundled ones too:
+    **Add a field** from a list of every known field (the standard ones and the fields of
+    all types, e.g. Color, Size, Specs, Author, each shown with its kind) or **New field…**
+    (name + one line / several lines); **Remove a field**; move, rename or switch fields
+    between one line and several lines; rename the type, make a
     copy, and delete a type when no item uses it (Generic can't be deleted: it is used
     when an item's type is missing). A changed bundled type can be **reset** to how it
     came with the app, and a deleted one can be **restored**. You can also create new types
@@ -87,7 +90,7 @@ As they come with the app (you can change them):
 | Type | Fields (besides Name and photos) |
 |---|---|
 | Generic | Description, Location, Web links, Paid price, Origin, Product code, Serial number, Maker, Brand, Seller, Made in, Year of acquisition, Issues, Notes |
-| Book | Description, Author, Publisher, Year published, Bookshelf, ISBN, Edition, Language, Pages, Genre, Format, Series, Lent to, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Book | Description, Author, Publisher, Year published, Location, Bookshelf, ISBN, Edition, Language, Pages, Genre, Format, Series, Lent to, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
 | Furniture | Description, Location, Color, Size, Material, Weight, Brand, Maker, Product code, Assembly notes, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
 | Device | Description, Location, Brand, Maker, Model, Specs, Product code, Serial number, Operating system, Accessories, Warranty until, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
 | Gadget | Description, Location, Brand, Maker, Model, Specs, Color, Product code, Serial number, Battery, Charger / cable, Warranty until, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |

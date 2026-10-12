@@ -81,21 +81,27 @@ type. These types come with the app (their fields are listed in the guide
 - Generic: every standard detail (see "Items").
 - Book, Furniture, Device, Gadget, Media, Plant, Appliance, Shoe,
   Clothes, Vehicle, Card, Key: the useful standard details plus their own
-  fields, e.g. Author, Publisher, Year published and Bookshelf for a Book,
+  fields, e.g. Author, Publisher, Year published, Location and Bookshelf
+  for a Book,
   Color and Size for Furniture, Specs for a Device.
 
 The Card type is for ID, bank, loyalty or membership cards. Never store a
 PIN, a password or a full card number: only the last digits.
 
-Every type can be changed, also the ones that come with the app:
-Home > Item types (text menus: main menu > Item types), then tap a type.
+Every type can be changed, also the ones that come with the app, in the
+Type Editor: Home > Item types (text menus: main menu > Item types), then
+tap a type. A new type opens in the Type Editor right away.
+- Add a field: a list shows every field you can add: "New field..." first,
+  then the standard fields (Price, Brand...), then the fields of all the
+  types (Color, Size, Specs, Author...), each with its kind (one line,
+  several lines...). Pick one, or pick "New field..." and give it a name
+  (e.g. "Players" or "Warranty until") and choose one line or several lines.
+- Remove a field: pick the field from the list (or tap a field > Remove).
+  It asks for confirmation and tells you how many items have a value for
+  it; those values are deleted (a backup can bring them back).
+- Tap a field to move it up or down, rename your own fields (values are
+  kept) or switch them between one line and several lines.
 - Rename the type.
-- Add a field: a standard one (Price, Brand...) or your own (for example
-  "Players" or "Warranty until"), one line or several lines.
-- Move fields up or down, rename your own fields (values are kept) or
-  switch them between one line and several lines.
-- Remove a field: asks for confirmation and tells you how many items have
-  a value for it; those values are deleted (a backup can bring them back).
 - Make a copy: a new type that starts with the same fields.
 - Delete a type: only when no item has it any more. Generic cannot be
   deleted (it is used when an item's type is missing).

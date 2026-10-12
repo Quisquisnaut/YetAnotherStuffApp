@@ -23,11 +23,11 @@ import photos
 import ui
 
 from . import __version__, backup, config, export, guide
-from .app import TRASH_DAYS, describe_filters, hidden_dirs, startup
+from .app import KIND_NAMES, TRASH_DAYS, describe_filters, field_choice_label, hidden_dirs, startup
 from .images import pil_to_jpeg_bytes, to_jpeg_bytes
 from .importer import import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
-from .storage import (EXTRA_PREFIX, FIELD_LABELS, SORT_KEYS, STANDARD_KEYS, Store, StorageError,
+from .storage import (EXTRA_PREFIX, FIELD_LABELS, SORT_KEYS, Store, StorageError,
                       is_safe_link)
 from .ui import IMAGE_FILE_EXTS, TEXT_FILE_EXTS, find_files
 
@@ -881,10 +881,10 @@ class TypesScreen(TableScreen):
 
 
 class TypeScreen(TableScreen):
-    """The fields of one type (any type can be changed)."""
+    """The Type Editor: the fields of one type (any type can be changed)."""
 
     def __init__(self, app, type_id):
-        TableScreen.__init__(self, app, "Type")
+        TableScreen.__init__(self, app, "Type Editor")
         self.type_id = type_id
         self.buttons(("Actions", self.on_actions))
         self.refresh()
@@ -897,17 +897,18 @@ class TypeScreen(TableScreen):
             return
         item_type = store.get_type(self.type_id)
         self.name = item_type["name"]
-        kinds = {"line": "one line", "text": "several lines", "links": "web links",
-                 "price": "price in \u20ac", "year": "year"}
         rows = [{"title": "Name", "subtitle": "always there", "color": MUTED}]
         for key, label, kind in item_type["fields"]:
-            rows.append({"title": label, "subtitle": kinds.get(kind, kind)
+            rows.append({"title": label, "subtitle": KIND_NAMES.get(kind, kind)
                          + ("" if key.startswith(EXTRA_PREFIX) else "  \u00b7  standard field"),
                          "on_tap": functools.partial(self.on_field, key, label), "accessory": "none"})
         rows.append({"title": "Photos", "subtitle": "always there", "color": MUTED})
         rows.append({"title": "Add a field", "color": ACCENT, "on_tap": self.on_add_field, "accessory": "none"})
+        if item_type["fields"]:
+            rows.append({"title": "Remove a field", "color": DANGER, "on_tap": self.on_remove_field,
+                         "accessory": "none"})
         count = store.type_counts().get(self.type_id, 0)
-        note = "Tap a field to move, rename or remove it."
+        note = "Add a field: pick one from the list or New field. Tap a field to move, rename or remove it."
         if item_type["bundled"]:
             note += " This type came with the app%s." % (
                 "; Actions > Reset brings back the original" if item_type["changed"] else "")
@@ -954,23 +955,41 @@ class TypeScreen(TableScreen):
     @task
     def _add_field(self):
         store = self.app.store
-        item_type = store.get_type(self.type_id)
-        have = set(key for key, _label, _kind in item_type["fields"])
-        free = [key for key in STANDARD_KEYS if key not in have]
-        options = ["A new field of my own..."] + ["%s (standard)" % FIELD_LABELS[key] for key in free]
-        index = choose("Add a field", options)
+        choices = store.field_choices(self.type_id)
+        index = choose("Add a field", ["New field..."] + [field_choice_label(c) for c in choices])
         if index is None:
             return
-        if index == 0:
-            name = ask_text("New field", "Name of the field, e.g. Warranty, Color, Size")
+        if index:
+            key, _label, kind = choices[index - 1]
+            store.add_type_field(self.type_id, key, kind)
+        else:
+            name = ask_text("New field", "Name of the field, e.g. Warranty, Players, Size")
             kind = choose("Kind of field", ["One line", "Several lines"])
             if kind is None:
                 return
             store.add_type_field(self.type_id, name, "line" if kind == 0 else "text")
-        else:
-            store.add_type_field(self.type_id, free[index - 1])
         self.app.refresh_all()
         hud("Field added")
+
+    def on_remove_field(self):
+        self._remove_field()
+
+    @task
+    def _remove_field(self):
+        fields = self.app.store.get_type(self.type_id)["fields"]
+        index = choose("Remove which field?", [label for _key, label, _kind in fields])
+        if index is not None:
+            self._confirm_remove(fields[index][0], fields[index][1])
+
+    def _confirm_remove(self, key, label):
+        """Ask, then remove (call from a task)."""
+        store = self.app.store
+        count = store.type_field_value_count(self.type_id, key)
+        message = "Its value will be deleted from %d item(s)." % count if count else \
+            "No item has a value for it."
+        if confirm("Remove the field '%s'?" % label, message, "Remove"):
+            store.remove_type_field(self.type_id, key)
+            self.app.refresh_all()
 
     @task
     def on_field(self, key, label):
@@ -983,12 +1002,8 @@ class TypeScreen(TableScreen):
         if index in (0, 1):
             store.move_type_field(self.type_id, key, -1 if index == 0 else 1)
         elif index == 2:
-            count = store.type_field_value_count(self.type_id, key)
-            message = "Its value will be deleted from %d item(s)." % count if count else \
-                "No item has a value for it."
-            if not confirm("Remove the field '%s'?" % label, message, "Remove"):
-                return
-            store.remove_type_field(self.type_id, key)
+            self._confirm_remove(key, label)
+            return
         elif index == 3:
             store.rename_type_field(self.type_id, key, ask_text("Rename field", "The values in the items are kept.",
                                                                   label))

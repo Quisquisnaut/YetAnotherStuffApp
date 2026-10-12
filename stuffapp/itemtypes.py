@@ -36,7 +36,7 @@ def _f(name, kind="line"):
 BUNDLED_TYPES = [
     (GENERIC, "Generic", _GENERIC_FIELDS),
     ("book", "Book", ["description", _f("Author"), _f("Publisher"), _f("Year published"),
-                      _f("Bookshelf"), _f("ISBN"), _f("Edition"), _f("Language"), _f("Pages"),
+                      "location", _f("Bookshelf"), _f("ISBN"), _f("Edition"), _f("Language"), _f("Pages"),
                       _f("Genre"), _f("Format"), _f("Series"), _f("Lent to")] + _END),
     ("furniture", "Furniture", ["description", "location", _f("Color"), _f("Size"), _f("Material"),
                                 _f("Weight"), "brand", "maker", "product_code",

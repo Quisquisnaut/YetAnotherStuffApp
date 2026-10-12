@@ -9,7 +9,7 @@ import os
 from . import backup, config, export, guide
 from .importer import import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
-from .storage import EXTRA_PREFIX, FIELD_LABELS, SORT_KEYS, STANDARD_KEYS, StorageError
+from .storage import EXTRA_PREFIX, FIELD_LABELS, SORT_KEYS, StorageError
 from .ui import Cancelled
 
 TRASH_DAYS = 30
@@ -34,6 +34,17 @@ def form_value(kind, value):
     if kind == "price":
         return "%.2f" % value if value is not None else ""
     return "" if value is None else str(value)
+
+
+KIND_NAMES = {"line": "one line", "text": "several lines", "links": "web links",
+              "price": "price in EUR", "year": "year"}
+
+
+def field_choice_label(choice):
+    """Text for one entry of the "add a field" list."""
+    key, label, kind = choice
+    return "%s (%s%s)" % (label, KIND_NAMES.get(kind, kind),
+                          "" if key.startswith(EXTRA_PREFIX) else ", standard")
 
 
 def type_label(item_type, counts=None):
@@ -391,12 +402,13 @@ class App(object):
             origin = ""
             if item_type["bundled"]:
                 origin = "came with the app, changed, " if item_type["changed"] else "came with the app, "
-            title = "Type: %s (%s%d items)\nFields: Name, %s" % (item_type["name"], origin, count, fields)
+            title = "Type Editor: %s (%s%d items)\nFields: Name, %s, Photos" % (
+                item_type["name"], origin, count, fields)
             actions = [
+                ("Add a field", self.add_field),
+                ("Remove a field", self.remove_field),
+                ("Change a field (move, rename, one line / several lines)", self.change_field),
                 ("Rename type", self.rename_type),
-                ("Add a standard field", self.add_standard_field),
-                ("Add an own field", self.add_own_field),
-                ("Change a field (move, rename, remove)", self.change_field),
                 ("Make a copy", lambda t: self.create_type(based_on=t)),
             ]
             if type_id != GENERIC:
@@ -414,21 +426,38 @@ class App(object):
         name = self.ui.form("Rename type", [("name", "New name", item_type["name"])])["name"]
         self.store.rename_type(type_id, name)
 
-    def add_standard_field(self, type_id):
-        have = set(k for k, _l, _kind in self.store.get_type(type_id)["fields"])
-        keys = [k for k in STANDARD_KEYS if k not in have]
-        if not keys:
-            self.ui.message("The type already has every standard field.")
+    def add_field(self, type_id):
+        """Pick a field from the list (standard fields and the fields of all
+        types) or "New field..." to make a new one."""
+        choices = self.store.field_choices(type_id)
+        index = self.ui.choose("Add which field?", ["New field..."] + [field_choice_label(c) for c in choices])
+        if index is None:
             return
-        index = self.ui.choose("Add which field?", [FIELD_LABELS[k] for k in keys])
-        if index is not None:
-            self.store.add_type_field(type_id, keys[index])
-
-    def add_own_field(self, type_id):
-        name = self.ui.form("Add an own field", [("name", "Field name (e.g. Players, Warranty until)", "")])["name"]
+        if index:
+            key, label, kind = choices[index - 1]
+            self.store.add_type_field(type_id, key, kind)
+            return
+        name = self.ui.form("New field", [("name", "Field name (e.g. Players, Warranty until)", "")])["name"]
         kind = self.ui.choose("Kind of field", ["One line", "Several lines"])
         if kind is not None:
             self.store.add_type_field(type_id, name, "text" if kind else "line")
+
+    def remove_field(self, type_id):
+        fields = self.store.get_type(type_id)["fields"]
+        if not fields:
+            self.ui.message("The type has no fields to remove (Name and Photos are always there).")
+            return
+        index = self.ui.choose("Remove which field?", [label for _k, label, _kind in fields])
+        if index is not None:
+            self._remove_field(type_id, fields[index][0], fields[index][1])
+
+    def _remove_field(self, type_id, key, label):
+        count = self.store.type_field_value_count(type_id, key)
+        text = "Remove the field '%s' from the type?" % label
+        if count:
+            text += " Its value will be DELETED from %d item(s)." % count
+        if self.ui.confirm(text):
+            self.store.remove_type_field(type_id, key)
 
     def change_field(self, type_id):
         fields = self.store.get_type(type_id)["fields"]
@@ -447,12 +476,7 @@ class App(object):
         if action in (0, 1):
             self.store.move_type_field(type_id, key, -1 if action == 0 else 1)
         elif action == 2:
-            count = self.store.type_field_value_count(type_id, key)
-            text = "Remove the field '%s' from the type?" % label
-            if count:
-                text += " Its value will be DELETED from %d item(s)." % count
-            if self.ui.confirm(text):
-                self.store.remove_type_field(type_id, key)
+            self._remove_field(type_id, key, label)
         elif action == 3:
             name = self.ui.form("Rename field", [("name", "New name (values are kept)", label)])["name"]
             self.store.rename_type_field(type_id, key, name)

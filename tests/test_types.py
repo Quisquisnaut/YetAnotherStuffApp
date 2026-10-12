@@ -79,6 +79,29 @@ class BundledTypeTests(TempStoreTestCase):
         self.assertRaises(StorageError, self.store.delete_type, "key")
         self.assertRaises(StorageError, self.store.delete_type, GENERIC)
 
+    def test_field_choices_list_known_fields_not_in_the_type(self):
+        game = self.store.create_type("Game", fields=["description", {"name": "Color"}])
+        choices = self.store.field_choices(game["id"])
+        keys = [c[0] for c in choices]
+        self.assertNotIn("description", keys)
+        self.assertNotIn("extra:Color", keys)
+        self.assertEqual(keys[0], "location")  # standard fields come first
+        self.assertIn(("extra:Specs", "Specs", "text"), choices)
+        self.assertIn(("extra:Author", "Author", "line"), choices)
+        self.assertEqual(len(keys), len(set(k.lower() for k in keys)))
+        # Picking from the list keeps the kind; fields of deleted types are still offered.
+        self.store.add_type_field(game["id"], "extra:Specs", "text")
+        self.assertIn(("extra:Specs", "Specs", "text"), self.store.get_type(game["id"])["fields"])
+        self.store.delete_type("book")
+        self.assertIn("extra:ISBN", [c[0] for c in self.store.field_choices(game["id"])])
+        self.store.create_type("Toy", fields=[{"name": "Players"}])
+        self.assertIn("extra:Players", [c[0] for c in self.store.field_choices(game["id"])])
+
+    def test_book_has_location_and_bookshelf(self):
+        keys = [k for k, _l, _k in self.store.get_type("book")["fields"]]
+        self.assertIn("location", keys)
+        self.assertIn("extra:Bookshelf", keys)
+
     def test_generic_can_be_changed_but_is_always_there(self):
         self.store.rename_type(GENERIC, "Other")
         self.store.remove_type_field(GENERIC, "made_in")

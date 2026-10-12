@@ -138,11 +138,12 @@ class ScriptedApp(TempStoreTestCase):
 
     def test_create_item_of_a_type(self):
         self.store.create_box("Library")
-        # Type 2 = Book: Name, Description, Author, Publisher, Year published, Bookshelf, ...
-        self.run_app(["4", "1", "2", "Dune", "", "Frank Herbert", "", "1965", "B2"] + [""] * 12 + ["n", "n", "0"])
+        # Type 2 = Book: Name, Description, Author, Publisher, Year published, Location, Bookshelf, ...
+        self.run_app(["4", "1", "2", "Dune", "", "Frank Herbert", "", "1965", "Study", "B2"] + [""] * 12
+                     + ["n", "n", "0"])
         item = self.store.list_items()[0]
-        self.assertEqual((item["type"], item["extra"]),
-                         ("book", {"Author": "Frank Herbert", "Year published": "1965", "Bookshelf": "B2"}))
+        self.assertEqual((item["type"], item["location"], item["extra"]),
+                         ("book", "Study", {"Author": "Frank Herbert", "Year published": "1965", "Bookshelf": "B2"}))
 
     def test_change_type_asks_before_deleting_values(self):
         box = self.store.create_box("Kitchen")
@@ -157,23 +158,31 @@ class ScriptedApp(TempStoreTestCase):
 
     def test_types_menu(self):
         box = self.store.create_box("Shelf")
-        # Create "Game" from no fields, add an own field "Players", then a standard field (1 = Description).
-        self.run_app(["12", "1", "Game", "1", "3", "Players", "1", "2", "1", "0", "0", "0"])
+        # Type Editor: create "Game" from no fields, Add a field > New field "Players",
+        # then pick fields from the list: Description (standard) and Color (a field of other types).
+        self.run_app(["12", "1", "Game", "1", "1", "1", "Players", "1", "1", "2", "0", "0", "0"])
         game = self.store.find_type("game")
         self.assertEqual([k for k, _l, _k in game["fields"]], ["extra:Players", "description"])
+        color = [c[0] for c in self.store.field_choices(game["id"])].index("extra:Color") + 2
+        self.run_app(["12", "15", "1", str(color), "0", "0", "0"])
+        self.assertIn("Color (one line)", self.text())
+        self.assertEqual([k for k, _l, _k in self.store.get_type(game["id"])["fields"]],
+                         ["extra:Players", "description", "extra:Color"])
+        self.run_app(["12", "15", "2", "3", "y", "0", "0", "0"])  # Remove a field > Color
+        game = self.store.find_type("game")
         item = self.store.create_item("Chess", box["id"], game["id"], extra={"Players": "2"})
         # Rename the field (Change a field > Players > Rename); values are kept.
-        self.run_app(["12", "15", "4", "1", "4", "Gamers", "0", "0", "0"])
+        self.run_app(["12", "15", "3", "1", "4", "Gamers", "0", "0", "0"])
         self.assertEqual(self.store.get_item(item["id"])["extra"], {"Gamers": "2"})
         # Removing a field with values asks first; a used type cannot be deleted.
-        self.run_app(["12", "15", "4", "1", "3", "n", "4", "1", "3", "y", "6", "0", "0", "0"])
+        self.run_app(["12", "15", "2", "1", "n", "3", "1", "3", "y", "6", "0", "0", "0"])
         self.assertEqual(self.store.get_item(item["id"])["extra"], {})
         self.assertIn("Give them another type first", self.text())
         self.assertTrue(self.store.type_exists(game["id"]))
         # Bundled types can be copied, changed, reset, deleted and restored.
         self.run_app(["12", "3", "5", "Novel", "0", "0", "0"])
         self.assertEqual(self.store.find_type("novel")["fields"], self.store.get_type("book")["fields"])
-        self.run_app(["12", "3", "1", "Books", "0", "0", "0"])
+        self.run_app(["12", "3", "4", "Books", "0", "0", "0"])
         self.assertEqual(self.store.get_type("book")["name"], "Books")
         self.run_app(["12", "3", "7", "y", "0", "0", "0"])  # Reset
         self.assertEqual(self.store.get_type("book")["name"], "Book")
@@ -220,7 +229,7 @@ class GuideTests(unittest.TestCase):
             self.assertTrue(title and text.strip())
             text.encode("ascii")
         fields = guide.topic_text(guide.topic_titles().index("Fields of the types that come with the app"))
-        self.assertIn("Book: Description, Author, Publisher, Year published, Bookshelf", fields)
+        self.assertIn("Book: Description, Author, Publisher, Year published, Location, Bookshelf", fields)
 
 
 if __name__ == "__main__":

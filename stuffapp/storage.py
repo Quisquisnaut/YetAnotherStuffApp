@@ -886,6 +886,19 @@ class Store(object):
                         kinds[name] = kind
         return kinds
 
+    def field_choices(self, type_id):
+        """``[(key, label, kind)]`` of the fields that can be added to a type:
+        the standard fields, then the own fields of every type (also the
+        original bundled ones), that the type does not have yet."""
+        have = set(key.lower() for key, _label, _kind in self.get_type(type_id)["fields"])
+        choices = [(key, FIELD_LABELS[key], FIELD_KINDS[key]) for key in STANDARD_KEYS if key not in have]
+        own = {}
+        for item_type in self.list_types() + bundled_types():
+            for key, label, kind in item_type["fields"]:
+                if key.startswith(EXTRA_PREFIX) and key.lower() not in have and key.lower() not in own:
+                    own[key.lower()] = (key, label, kind)
+        return choices + sorted(own.values(), key=lambda f: f[1].lower())
+
     def type_counts(self):
         """``{type_id: number of items}``."""
         counts = {}
@@ -967,9 +980,11 @@ class Store(object):
 
     def add_type_field(self, type_id, field, kind="line"):
         """Add a standard field (its key, e.g. "price") or a new own field
-        (its name, with ``kind`` "line" or "text") to a user type. Returns
+        (its name, with ``kind`` "line" or "text") to a type (or a field key from ``field_choices``). Returns
         the field key."""
         types, item_type = self._user_type(type_id)
+        if isinstance(field, str) and field.startswith(EXTRA_PREFIX):
+            field = field[len(EXTRA_PREFIX):]  # a field key from field_choices()
         entry = field if field in STANDARD_KEYS else {"name": field, "kind": kind}
         item_type["fields"] = _clean_type_fields(_fields_to_json(item_type["fields"]) + [entry])
         self._save_user_types(types)
