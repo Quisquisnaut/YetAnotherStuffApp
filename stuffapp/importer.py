@@ -7,6 +7,7 @@ one-line detail such as the serial number they go to the notes). A
 ``Key: value`` line with an unknown key is kept in the notes::
 
     Name: Cordless drill
+    Type: Device
     Box: Garage tools
     Description: 18V drill with two batteries
     Location: Garage, shelf 2
@@ -21,7 +22,8 @@ one-line detail such as the serial number they go to the notes). A
     Made in: Germany
     Year of acquisition: 2023
     Issues: battery holds less charge
-    Warranty: 2 years
+    Model: PSR 18
+    Warranty until: 2026
     Images: drill.jpg, drill_box.jpg
     Notes:
     Warranty until 2026.
@@ -29,9 +31,10 @@ one-line detail such as the serial number they go to the notes). A
 
 ``Box`` is optional: when it names an existing box, the item goes there;
 otherwise the app asks which box to use (every item is in a box).
-Lines starting with the name of a custom field (of all items or of any
-box) fill that field, e.g. ``Warranty`` above. Indented lines always
-continue the previous field.
+``Type`` names the item type (Generic when missing or unknown). Lines
+starting with the name of one of a type's own fields fill that field,
+e.g. ``Model`` above. Values of fields that the type does not have are
+added to the notes. Indented lines always continue the previous field.
 ``Images`` paths are relative to the text file. The Markdown files written
 by "Export item to Markdown" use the same keys and can be imported again.
 A ``.json`` file with the same field names is accepted too.
@@ -42,7 +45,8 @@ import os
 import re
 
 from .images import import_image_file
-from .storage import LINE_FIELDS, TEXT_FIELDS, StorageError
+from .itemtypes import GENERIC
+from .storage import EXTRA_PREFIX, FIELD_LABELS, LINE_FIELDS, STANDARD_KEYS, TEXT_FIELDS, StorageError
 
 KEY_ALIASES = {
     "name": "name",
@@ -70,6 +74,8 @@ KEY_ALIASES = {
     "gallery": "images",
     "image gallery": "images",
     "box": "box",
+    "type": "type",
+    "item type": "type",
     "paid price (€)": "price",
     "product code": "product_code",
     "sku": "product_code",
@@ -99,7 +105,9 @@ KEY_ALIASES = {
 }
 
 # Single-value keys (everything except links and images).
-_TEXT_KEYS = ("name", "box", "price", "year_acquired") + TEXT_FIELDS
+_TEXT_KEYS = ("name", "box", "type", "price", "year_acquired") + TEXT_FIELDS
+# One-line values: a following plain line is not part of them.
+_ONE_LINE_KEYS = ("box", "type") + LINE_FIELDS
 
 # Keys written by the exporter that are not item fields.
 IGNORED_KEYS = {"id", "created", "modified"}
@@ -121,13 +129,16 @@ def _split_values(text):
     return found
 
 
-def parse_item_text(text, custom_names=()):
+def parse_item_text(text, extra_kinds=None):
     """Parse item text into a dict of raw field values.
 
-    ``custom_names`` are the user's own field names: lines starting with
-    one of them go to ``fields["custom"]`` (``{name: value}``).
+    ``extra_kinds`` (``{name: "line" | "text"}``) are the names of the item
+    types' own fields: lines starting with one of them go to
+    ``fields["extra"]`` (``{name: value}``).
     """
-    custom = dict((name.lower(), "custom:" + name) for name in custom_names)
+    extra_kinds = extra_kinds or {}
+    extra = dict((name.lower(), EXTRA_PREFIX + name) for name in extra_kinds)
+    one_line = set(_ONE_LINE_KEYS) | set(EXTRA_PREFIX + n for n, k in extra_kinds.items() if k == "line")
     fields = {}
     current = None
     for raw_line in text.splitlines():
@@ -138,7 +149,7 @@ def parse_item_text(text, custom_names=()):
         key = None
         if match:
             raw_key = match.group(1).strip().lower()
-            key = KEY_ALIASES.get(raw_key) or custom.get(raw_key)
+            key = KEY_ALIASES.get(raw_key) or extra.get(raw_key)
         if match and not key and match.group(1).strip().lower() in IGNORED_KEYS:
             current = None
             continue
@@ -170,7 +181,7 @@ def parse_item_text(text, custom_names=()):
         elif current == "name":
             if line.strip():
                 current = None
-        elif (current in LINE_FIELDS or current.startswith("custom:")) and fields[current]:
+        elif current in one_line and fields[current]:
             # Single-line details: an extra line is a note, not part of
             # e.g. the serial number.
             if line.strip():
@@ -179,15 +190,15 @@ def parse_item_text(text, custom_names=()):
         else:
             fields[current] = (fields[current] + "\n" + line.strip()) if fields[current] else line.strip()
     for key in list(fields):
-        if key in _TEXT_KEYS or key.startswith("custom:"):
+        if key in _TEXT_KEYS or key.startswith(EXTRA_PREFIX):
             fields[key] = fields[key].strip()
     values = {}
-    for key in [k for k in fields if k.startswith("custom:")]:
+    for key in [k for k in fields if k.startswith(EXTRA_PREFIX)]:
         value = fields.pop(key)
         if value:
-            values[key[len("custom:"):]] = value
+            values[key[len(EXTRA_PREFIX):]] = value
     if values:
-        fields["custom"] = values
+        fields["extra"] = values
     if not fields.get("name"):
         raise StorageError("The file has no item name (add a 'Name:' line).")
     return fields
@@ -196,7 +207,7 @@ def parse_item_text(text, custom_names=()):
 MAX_ITEM_FILE_BYTES = 1024 * 1024
 
 
-def parse_item_file(path, custom_names=()):
+def parse_item_file(path, extra_kinds=None):
     if os.path.getsize(path) > MAX_ITEM_FILE_BYTES:
         raise StorageError("The file is too large for an item (max 1 MB).")
     try:
@@ -212,7 +223,7 @@ def parse_item_file(path, custom_names=()):
         if not isinstance(data, dict) or not data.get("name"):
             raise StorageError("The JSON file has no item name.")
         return data
-    return parse_item_text(text, custom_names)
+    return parse_item_text(text, extra_kinds)
 
 
 def suggested_box(store, path):
@@ -225,27 +236,83 @@ def suggested_box(store, path):
     return None
 
 
-def import_item_file(store, path, box_id=None):
+def suggested_type(store, path):
+    """The existing type named in the file's ``Type:`` line, or ``None``."""
+    return store.find_type(str(parse_item_file(path).get("type") or ""))
+
+
+def _fit_to_type(store, fields, item_type, warnings):
+    """Keep the values of the type's fields. Values of other fields are
+    added to the notes (if the type has notes) and reported."""
+    keys = dict((key.lower(), (key, label)) for key, label, _kind in item_type["fields"])
+    data = {"extra": {}}
+    outside = []
+    for key in STANDARD_KEYS:
+        value = fields.get(key)
+        if value in (None, "", []):
+            continue
+        if key in keys:
+            data[key] = value
+        else:
+            if key == "links" and isinstance(value, list):
+                value = ", ".join(str(v) for v in value)
+            outside.append((FIELD_LABELS[key], value))
+    extra = fields.get("extra")
+    if extra is None:
+        extra = fields.get("custom")  # (name used by an earlier version)
+    if extra is not None and not isinstance(extra, dict):
+        raise StorageError("The type's fields must be given as {name: value}.")
+    for name, value in (extra or {}).items():
+        if value in (None, ""):
+            continue
+        match = keys.get((EXTRA_PREFIX + str(name)).lower())
+        if match:
+            data["extra"][match[1]] = value
+        else:
+            outside.append((str(name), value))
+    if outside:
+        text = "\n".join("%s: %s" % (label, value) for label, value in outside)
+        names = ", ".join(label for label, _value in outside)
+        if "notes" in keys:
+            data["notes"] = (str(data.get("notes") or "") + "\n\n" + text).strip()
+            warnings.append("Not fields of the type '%s', added to the notes: %s" % (item_type["name"], names))
+        else:
+            warnings.append("Not fields of the type '%s', not imported: %s" % (item_type["name"], names))
+    return data
+
+
+def import_item_file(store, path, box_id=None, type_id=None):
     """Create an item from the file at ``path`` inside box ``box_id``.
 
     Every item must be in a box: without ``box_id`` the box named in the
-    file's ``Box:`` line is used, if it exists.
+    file's ``Box:`` line is used, if it exists. The type is ``type_id``,
+    else the one named in the ``Type:`` line, else Generic.
     Returns ``(item, warnings)``; warnings list images that could not be
-    imported.
+    imported and values that do not fit the type.
     """
-    fields = parse_item_file(path, store.all_field_names())
+    fields = parse_item_file(path, store.all_extra_kinds())
     if not box_id:
         box = suggested_box(store, path)
         if box is None:
             raise StorageError("Choose a box for '%s': every item must be in a box." % fields["name"])
         box_id = box["id"]
+    warnings = []
+    if type_id:
+        item_type = store.get_type(type_id)
+    else:
+        named = str(fields.get("type") or "").strip()
+        item_type = store.find_type(named) if named else None
+        if item_type is None:
+            if named:
+                warnings.append("Unknown type '%s': the item is Generic." % named[:60])
+            item_type = store.get_type(GENERIC)
     images = fields.get("images") or []
     if isinstance(images, str):
         images = _split_values(images)
-    data = dict((k, v) for k, v in fields.items() if k in
-                ("links", "price", "year_acquired", "custom") + TEXT_FIELDS)
-    item = store.create_item(fields["name"], box_id, **data)
-    warnings = []
+    if not isinstance(images, list):
+        images = []
+    data = _fit_to_type(store, fields, item_type, warnings)
+    item = store.create_item(fields["name"], box_id, item_type["id"], **data)
     base_dir = os.path.dirname(os.path.abspath(path))
     for image in images:
         if re.match(r"^[a-z]+://", image):

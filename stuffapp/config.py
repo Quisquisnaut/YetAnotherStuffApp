@@ -58,7 +58,7 @@ def has_data(folder):
 
 
 def copy_data(source, target):
-    """Copy boxes, items, images and custom fields from ``source`` to an empty ``target``."""
+    """Copy boxes, items, images and item types from ``source`` to an empty ``target``."""
     if has_data(target):
         raise ValueError("The target folder already contains data.")
     for sub in _DATA_SUBDIRS:

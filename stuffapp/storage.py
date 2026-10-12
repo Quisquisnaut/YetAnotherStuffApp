@@ -5,7 +5,7 @@ Layout of the data directory::
     <root>/boxes/<box_id>.json
     <root>/items/<item_id>.json          (``"box"`` = id of its box)
     <root>/images/<item_id>/<image>.jpg
-    <root>/meta/fields.json              custom fields of all items
+    <root>/meta/types.json               item types made by the user
     <root>/exports/...
     <root>/trash/<stamp>_<kind>_<id>/   deleted boxes/items (restorable)
     <root>/backups/*.zip                full backups (see backup.py)
@@ -17,10 +17,10 @@ Every item is always in exactly one box: the box id is stored in the item
 itself, an item is created inside a box and can only be moved to another
 box or deleted. A box can only be deleted when it is empty.
 
-Custom fields: the user can add own fields, either for all items
-(``meta/fields.json``) or for the items of one box (the box's ``fields``
-list). Item values are kept in ``item["custom"]`` as ``{name: text}``;
-when an item moves to another box its values are kept.
+Every item has exactly one type (``item["type"]``, a type id). A type is
+defined by the fields it includes (see ``itemtypes.py``): standard fields
+are stored as item keys, the type's own fields in ``item["extra"]`` as
+``{field name: text}``. A box can hold items of any type.
 
 Every JSON write keeps the previous version as ``<file>.json.bak``; if a
 file is found damaged when read, it is repaired from that copy.
@@ -33,11 +33,13 @@ import shutil
 import uuid
 from datetime import datetime
 
-# The item details, in display order: (key, label, kind). ``kind`` is
-# "line" (one line of text), "text" (several lines), "links", "price" or
-# "year". All are optional except the name. Every UI and export uses this
-# list, so a new detail only needs to be added here (and to the importer
-# aliases if it has other common names).
+from .itemtypes import BUNDLED_IDS, GENERIC
+
+# The standard item fields, in display order: (key, label, kind). ``kind``
+# is "line" (one line of text), "text" (several lines), "links", "price" or
+# "year". All are optional except the name (and the type). Which of them an
+# item shows depends on its type (see itemtypes.py); a new standard field
+# needs to be added here, to the Generic type and to the importer aliases.
 ITEM_FIELD_SPECS = (
     ("name", "Name", "line"),
     ("description", "Description", "text"),
@@ -59,9 +61,15 @@ TEXT_FIELDS = tuple(key for key, _label, kind in ITEM_FIELD_SPECS if kind in ("l
 # The single-line ones (newlines become spaces).
 LINE_FIELDS = tuple(key for key, _label, kind in ITEM_FIELD_SPECS if kind == "line" and key != "name")
 FIELD_LABELS = dict((key, label) for key, label, _kind in ITEM_FIELD_SPECS)
+FIELD_KINDS = dict((key, kind) for key, _label, kind in ITEM_FIELD_SPECS)
+# The standard fields a type can include (the name is always there).
+STANDARD_KEYS = tuple(key for key, _label, _kind in ITEM_FIELD_SPECS if key != "name")
 
-# ``custom`` holds the values of the user's own fields: {field name: text}.
-ITEM_FIELDS = tuple(key for key, _label, _kind in ITEM_FIELD_SPECS) + ("images", "custom")
+# ``extra`` holds the values of the type's own fields: {field name: text}.
+ITEM_FIELDS = tuple(key for key, _label, _kind in ITEM_FIELD_SPECS) + ("images", "extra")
+EXTRA_PREFIX = "extra:"  # field key of a type's own field: "extra:<name>"
+EXTRA_KINDS = ("line", "text")
+MAX_TYPE_FIELDS = 60
 
 MAX_FIELD_NAME = 40
 # Letters (any language), digits, spaces and a few signs; must start with a letter.
@@ -69,7 +77,7 @@ _FIELD_NAME_RE = re.compile(r"^[^\W\d_][\w ()/.'-]*$")
 
 JPEG_MAGIC = b"\xff\xd8\xff"
 
-SORT_KEYS = ("name", "price", "newest", "box", "year")
+SORT_KEYS = ("name", "price", "newest", "box", "year", "type")
 
 # Box that receives items whose box is missing (old data, damaged files).
 UNSORTED_LABEL = "Unsorted"
@@ -121,7 +129,7 @@ def parse_year(value):
 
 
 def check_field_name(name):
-    """Return the cleaned name of a custom field or raise StorageError."""
+    """Return the cleaned name of a type's own field or raise StorageError."""
     from .importer import IGNORED_KEYS, KEY_ALIASES  # (importer imports this module)
 
     name = _one_line(name)
@@ -135,28 +143,76 @@ def check_field_name(name):
     return name
 
 
-def _clean_custom(values):
+def _clean_extra(values):
     """``{name: text}`` with valid names and non-empty values."""
     result = {}
     if not isinstance(values, dict):
         return result
     for name, value in values.items():
         name = _one_line(name) if isinstance(name, str) else ""
-        value = _one_line(value) if isinstance(value, (str, int, float)) and not isinstance(value, bool) else ""
-        if name and value and len(name) <= MAX_FIELD_NAME:
+        value = _clean_str(value) if isinstance(value, (str, int, float)) and not isinstance(value, bool) else ""
+        if name and value and len(name) <= MAX_FIELD_NAME and \
+                name.lower() not in [n.lower() for n in result]:
             result[name] = value
     return result
 
 
-def _clean_names(names):
+def _has_value(value):
+    return value not in (None, "", [], {})
+
+
+def _clean_type_fields(fields, strict=True):
+    """Check a type's field list (standard keys and ``{"name", "kind"}``
+    entries) and return it as ``[(key, label, kind)]``. With ``strict``
+    False, bad entries are skipped instead of raising StorageError."""
     result = []
-    for name in names if isinstance(names, list) else []:
-        if isinstance(name, str):
-            name = _one_line(name)
-            if name and len(name) <= MAX_FIELD_NAME and _FIELD_NAME_RE.match(name) and \
-                    name.lower() not in [n.lower() for n in result]:
-                result.append(name)
+    seen = set()
+    for entry in fields if isinstance(fields, (list, tuple)) else []:
+        try:
+            if isinstance(entry, str):
+                if entry not in STANDARD_KEYS:
+                    raise StorageError("Unknown standard field: %r" % (entry,))
+                key, label, kind = entry, FIELD_LABELS[entry], FIELD_KINDS[entry]
+            elif isinstance(entry, dict):
+                label = check_field_name(entry.get("name"))
+                kind = entry.get("kind", "line")
+                if kind not in EXTRA_KINDS:
+                    raise StorageError("A field is either one line ('line') or several lines ('text').")
+                key = EXTRA_PREFIX + label
+            else:
+                raise StorageError("Invalid field: %r" % (entry,))
+            if key.lower() in seen:
+                raise StorageError("The field '%s' is in the type twice." % label)
+        except StorageError:
+            if strict:
+                raise
+            continue
+        seen.add(key.lower())
+        result.append((key, label, kind))
+    if len(result) > MAX_TYPE_FIELDS:
+        if strict:
+            raise StorageError("A type can have at most %d fields." % MAX_TYPE_FIELDS)
+        result = result[:MAX_TYPE_FIELDS]
     return result
+
+
+def _fields_to_json(fields):
+    return [key if not key.startswith(EXTRA_PREFIX) else {"name": label, "kind": kind}
+            for key, label, kind in fields]
+
+
+_bundled_cache = []
+
+
+def bundled_types():
+    """The types that come with the app (resolved, read-only)."""
+    if not _bundled_cache:
+        from .itemtypes import BUNDLED_TYPES
+
+        for type_id, name, fields in BUNDLED_TYPES:
+            _bundled_cache.append({"id": type_id, "name": name, "bundled": True,
+                                   "fields": _clean_type_fields(fields)})
+    return [dict(t, fields=list(t["fields"])) for t in _bundled_cache]
 
 
 def _one_line(value):
@@ -260,7 +316,8 @@ class Store(object):
         self.trash_dir = os.path.join(self.root, "trash")
         self.backups_dir = os.path.join(self.root, "backups")
         self.meta_dir = os.path.join(self.root, "meta")
-        self.fields_path = os.path.join(self.meta_dir, "fields.json")
+        self.types_path = os.path.join(self.meta_dir, "types.json")
+        self._types_cache = (None, [])
         self.problems = []  # damaged files that could not be repaired
         self.repaired = []  # damaged files repaired from their .bak copy
         for path in (self.boxes_dir, self.items_dir, self.images_dir, self.exports_dir,
@@ -292,7 +349,11 @@ class Store(object):
                 data["year_acquired"] = parse_year(data.get("year_acquired"))
             except StorageError:
                 data["year_acquired"] = None
-            data["custom"] = _clean_custom(data.get("custom"))
+            extra = _clean_extra(data.pop("custom", None))  # (name used by an earlier version)
+            extra.update(_clean_extra(data.get("extra")))
+            data["extra"] = extra
+            if not isinstance(data.get("type"), str) or not _ID_RE.match(data["type"]):
+                data["type"] = GENERIC
             data["links"] = _clean_links(data.get("links") if isinstance(data.get("links"), (list, str)) else None)
             try:
                 data["price"] = parse_price(data.get("price"))
@@ -311,7 +372,7 @@ class Store(object):
         else:
             data["label"] = _one_line(data.get("label")) or "(no label)"
             data["description"] = _clean_str(data.get("description"))
-            data["fields"] = _clean_names(data.get("fields"))
+            data.pop("fields", None)  # (box custom fields of an earlier version)
         return data
 
     def _read(self, path):
@@ -509,36 +570,66 @@ class Store(object):
 
     # --------------------------------------------------------------- items
     @staticmethod
-    def _normalize_item(data):
+    def _normalize_item(data, item_type):
+        """Clean the values of an item. Values of the type's own fields get
+        the field's spelling; one-line fields lose their line breaks."""
         item = {"name": _one_line(data.get("name"))}
         for key in TEXT_FIELDS:
             item[key] = _one_line(data.get(key)) if key in LINE_FIELDS else _clean_str(data.get(key))
         item["links"] = _clean_links(data.get("links"))
         item["price"] = parse_price(data.get("price"))
         item["year_acquired"] = parse_year(data.get("year_acquired"))
-        custom = data.get("custom") or {}
-        if not isinstance(custom, dict):
-            raise StorageError("Custom fields must be given as {name: value}.")
-        for name in custom:
+        extra = data.get("extra") or {}
+        if not isinstance(extra, dict):
+            raise StorageError("The type's fields must be given as {name: value}.")
+        own = dict((label.lower(), (label, kind)) for key, label, kind in item_type["fields"]
+                   if key.startswith(EXTRA_PREFIX))
+        values = {}
+        for name, value in extra.items():
             if not isinstance(name, str) or not _one_line(name) or len(_one_line(name)) > MAX_FIELD_NAME:
-                raise StorageError("Invalid custom field name: %r" % (name,))
-        item["custom"] = _clean_custom(custom)
+                raise StorageError("Invalid field name: %r" % (name,))
+            if value is not None and not isinstance(value, (str, int, float)) or isinstance(value, bool):
+                raise StorageError("Invalid value for '%s'." % name)
+            label, kind = own.get(_one_line(name).lower(), (_one_line(name), "text"))
+            value = _one_line(value) if kind == "line" else _clean_str(value)
+            if value:
+                values[label] = value
+        item["extra"] = values
         return item
 
-    def create_item(self, name, box, **fields):
-        """Create an item inside the box with id ``box``."""
+    @staticmethod
+    def _outside_type(item, item_type):
+        """Labels of the filled-in fields that are not part of the type."""
+        keys = set(key.lower() for key, _label, _kind in item_type["fields"])
+        labels = [FIELD_LABELS[k] for k in STANDARD_KEYS if k not in keys and _has_value(item.get(k))]
+        labels += [n for n, v in (item.get("extra") or {}).items()
+                   if (EXTRA_PREFIX + n).lower() not in keys and _has_value(v)]
+        return labels
+
+    def create_item(self, name, box, type_id=GENERIC, **fields):
+        """Create an item of type ``type_id`` inside the box with id ``box``.
+        Only fields of the type can be filled in."""
+        return self._create_item(name, box, type_id, fields, strict=True)
+
+    def _create_item(self, name, box, type_id, fields, strict):
         unknown = set(fields) - set(ITEM_FIELDS)
         if unknown:
             raise StorageError("Unknown item fields: %s" % ", ".join(sorted(unknown)))
         if not box:
             raise StorageError("Choose a box for the item: every item must be in a box.")
         self.get_box(box)
+        item_type = self.get_type(type_id or GENERIC)
+        fields = dict(fields)
         fields.pop("images", None)
         fields["name"] = name
-        item = self._normalize_item(fields)
+        item = self._normalize_item(fields, item_type)
         if not item["name"]:
             raise StorageError("An item needs a name.")
+        outside = self._outside_type(item, item_type)
+        if strict and outside:
+            raise StorageError("Not a field of the type '%s': %s" % (item_type["name"], ", ".join(outside)))
         item["id"] = _new_id()
+        item["type"] = item_type["id"]
         item["box"] = box
         item["images"] = []
         item["created"] = item["modified"] = _now()
@@ -556,36 +647,45 @@ class Store(object):
         return sorted(items, key=lambda i: i.get("name", "").lower())
 
     def update_item(self, item_id, **changes):
+        """Change values of an item. ``extra`` only changes the given fields
+        of the type (an empty value clears one). Fields that are not part of
+        the item's type can only be cleared (use ``change_item_type`` to
+        change the type)."""
         item = self.get_item(item_id)
         unknown = set(changes) - (set(ITEM_FIELDS) - {"images"})
         if unknown:
             raise StorageError("Unknown item fields: %s" % ", ".join(sorted(unknown)))
         merged = dict(item)
         merged.update(changes)
-        if "custom" in changes:
-            # Only the given custom fields change; an empty value removes one.
-            custom = dict(item.get("custom") or {})
-            if not isinstance(changes["custom"], dict):
-                raise StorageError("Custom fields must be given as {name: value}.")
-            for name, value in changes["custom"].items():
-                for key in [k for k in custom if k.lower() == str(name).lower()]:
-                    del custom[key]  # same field written with another case
-                custom[name] = value
-            merged["custom"] = custom
-        normalized = self._normalize_item(merged)
+        if "extra" in changes:
+            extra = dict(item.get("extra") or {})
+            if not isinstance(changes["extra"], dict):
+                raise StorageError("The type's fields must be given as {name: value}.")
+            for name, value in changes["extra"].items():
+                for key in [k for k in extra if k.lower() == str(name).lower()]:
+                    del extra[key]  # same field written with another case
+                extra[name] = value
+            merged["extra"] = extra
+        item_type = self.item_type(item)
+        normalized = self._normalize_item(merged, item_type)
         if not normalized["name"]:
             raise StorageError("An item needs a name.")
+        before = set(n.lower() for n in self._outside_type(item, item_type))
+        new = [n for n in self._outside_type(normalized, item_type) if n.lower() not in before]
+        if new:
+            raise StorageError("Not a field of the type '%s': %s" % (item_type["name"], ", ".join(new)))
         item.update(normalized)
         item["modified"] = _now()
         self._write(self._item_path(item_id), item)
         return item
 
     def clone_item(self, item_id, box_id=None):
-        """Duplicate an item (fields and images) under a new internal id,
-        in the same box or in ``box_id``. Returns the new item."""
+        """Duplicate an item (type, fields and images) under a new internal
+        id, in the same box or in ``box_id``. Returns the new item."""
         item = self.get_item(item_id)
         fields = dict((k, item.get(k)) for k in ITEM_FIELDS if k not in ("name", "images"))
-        clone = self.create_item(item["name"], box_id or item.get("box"), **fields)
+        clone = self._create_item(item["name"], box_id or item.get("box"), self.item_type(item)["id"],
+                                  fields, strict=False)
         clone["cloned_from"] = item_id
         source_dir = self.item_image_dir(item_id)
         if item.get("images") and os.path.isdir(source_dir):
@@ -612,163 +712,285 @@ class Store(object):
         self._remove_json(self._item_path(item_id))
         return True
 
-    # -------------------------------------------------------- custom fields
-    def general_fields(self):
-        """Names of the custom fields that every item has."""
-        for path in (self.fields_path, self.fields_path + ".bak"):
+    # ------------------------------------------------------- item values
+    @staticmethod
+    def field_value(item, key):
+        """Value of field ``key`` ("price", "extra:Author" ...) of an item."""
+        if key.startswith(EXTRA_PREFIX):
+            name = key[len(EXTRA_PREFIX):].lower()
+            for other, value in (item.get("extra") or {}).items():
+                if other.lower() == name:
+                    return value
+            return ""
+        return item.get(key)
+
+    def item_fields(self, item, type_id=None, leftovers=True):
+        """``[(key, label, kind, value)]`` of an item: every field of its
+        type (or of type ``type_id``), then filled-in values that are not
+        part of that type (so that nothing is ever hidden; skipped when
+        ``leftovers`` is false)."""
+        item_type = self.get_type(type_id) if type_id else self.item_type(item)
+        rows = [(key, label, kind, self.field_value(item, key)) for key, label, kind in item_type["fields"]]
+        if not leftovers:
+            return rows
+        keys = set(key.lower() for key, _label, _kind in item_type["fields"])
+        for key in STANDARD_KEYS:
+            if key not in keys and _has_value(item.get(key)):
+                rows.append((key, FIELD_LABELS[key], FIELD_KINDS[key], item.get(key)))
+        for name, value in (item.get("extra") or {}).items():
+            if (EXTRA_PREFIX + name).lower() not in keys and _has_value(value):
+                rows.append((EXTRA_PREFIX + name, name, "text", value))
+        return rows
+
+    def lost_on_type_change(self, item, type_id):
+        """Labels of the filled-in fields an item would lose with type ``type_id``."""
+        return self._outside_type(item, self.get_type(type_id))
+
+    def change_item_type(self, item_id, type_id):
+        """Give an item another type. Values of fields the new type does not
+        have are deleted (ask first: see ``lost_on_type_change``); values of
+        fields both types have are kept."""
+        item = self.get_item(item_id)
+        new_type = self.get_type(type_id)
+        keys = set(key.lower() for key, _label, _kind in new_type["fields"])
+        for key in STANDARD_KEYS:
+            if key not in keys:
+                item[key] = [] if key == "links" else None if FIELD_KINDS[key] in ("price", "year") else ""
+        item["extra"] = dict((n, v) for n, v in (item.get("extra") or {}).items()
+                             if (EXTRA_PREFIX + n).lower() in keys)
+        item["type"] = new_type["id"]
+        item.update(self._normalize_item(item, new_type))
+        item["modified"] = _now()
+        self._write(self._item_path(item_id), item)
+        return item
+
+    # --------------------------------------------------------------- types
+    def _load_user_types(self):
+        """User types from ``meta/types.json`` (checked: the file may have
+        been edited by hand), as stored: ``[{"id", "name", "fields"}]``."""
+        try:
+            stamp = (os.path.getmtime(self.types_path), os.path.getsize(self.types_path))
+        except OSError:
+            stamp = None
+        if stamp is not None and self._types_cache[0] == stamp:
+            return [dict(t, fields=list(t["fields"])) for t in self._types_cache[1]]
+        data = {}
+        for path in (self.types_path, self.types_path + ".bak"):
             try:
-                return _clean_names(self._load_json(path).get("fields"))
+                data = self._load_json(path)
+                break
             except (OSError, ValueError, UnicodeDecodeError):
                 continue
-        return []
-
-    def _save_general_fields(self, names):
-        self._write(self.fields_path, {"id": "fields", "fields": names})
-
-    def box_fields(self, box_id):
-        """Names of the custom fields that only the items of this box have."""
-        return list(self.get_box(box_id).get("fields", []))
-
-    def fields_for_box(self, box_id):
-        """All custom fields of the items in a box: general ones first."""
-        names = self.general_fields()
-        if box_id and self.box_exists(box_id):
-            lowered = [n.lower() for n in names]
-            names += [n for n in self.box_fields(box_id) if n.lower() not in lowered]
-        return names
-
-    def item_custom_fields(self, item):
-        """``[(name, value)]`` for an item: every field of its box (value may
-        be empty), then values of fields that no longer apply (e.g. after a
-        move to another box) so that nothing is hidden."""
-        values = item.get("custom") or {}
-        by_lower = dict((n.lower(), n) for n in values)
         result = []
-        used = set()
-        for name in self.fields_for_box(item.get("box")):
-            key = by_lower.get(name.lower())
-            result.append((name, values.get(key, "") if key else ""))
-            if key:
-                used.add(key)
-        result += [(n, v) for n, v in values.items() if n not in used]
+        names = [t["name"].lower() for t in bundled_types()]
+        ids = set(BUNDLED_IDS)
+        for raw in data.get("types") if isinstance(data.get("types"), list) else []:
+            if not isinstance(raw, dict):
+                continue
+            type_id, name = raw.get("id"), _one_line(raw.get("name"))[:MAX_FIELD_NAME]
+            if not isinstance(type_id, str) or not _ID_RE.match(type_id) or type_id in ids:
+                continue
+            if not name or name.lower() in names:
+                continue
+            ids.add(type_id)
+            names.append(name.lower())
+            result.append({"id": type_id, "name": name, "bundled": False,
+                           "fields": _clean_type_fields(raw.get("fields"), strict=False)})
+        self._types_cache = (stamp, [dict(t, fields=list(t["fields"])) for t in result])
         return result
 
-    def all_field_names(self):
-        """Every custom field name (general and of any box)."""
-        names = self.general_fields()
-        for box in self.list_boxes():
-            for name in box.get("fields", []):
-                if name.lower() not in [n.lower() for n in names]:
-                    names.append(name)
-        return names
+    def _save_user_types(self, types):
+        self._types_cache = (None, [])
+        self._write(self.types_path, {"id": "types", "types": [
+            {"id": t["id"], "name": t["name"], "fields": _fields_to_json(t["fields"])} for t in types]})
 
-    def _scope(self, box_id):
-        """(current names, save function, affected items) for a scope."""
-        if box_id:
-            box = self.get_box(box_id)
+    def list_types(self):
+        """Bundled types (Generic first), then the user's types by name."""
+        return bundled_types() + sorted(self._load_user_types(), key=lambda t: t["name"].lower())
 
-            def save(names):
-                box["fields"] = names
-                box["modified"] = _now()
-                self._write(self._box_path(box_id), box)
-            return list(box.get("fields", [])), save, self.box_items(box_id)
-        return self.general_fields(), self._save_general_fields, self.list_items()
+    def get_type(self, type_id):
+        for item_type in self.list_types():
+            if item_type["id"] == type_id:
+                return item_type
+        raise StorageError("No item type with id %s" % (type_id,))
 
-    @staticmethod
-    def _value_key(item, name):
-        """The key of ``item["custom"]`` holding field ``name`` (any case)."""
-        for key in item.get("custom") or {}:
-            if key.lower() == name.lower():
-                return key
+    def type_exists(self, type_id):
+        return any(t["id"] == type_id for t in self.list_types())
+
+    def find_type(self, text):
+        """The type whose name or id is ``text`` (any case), or ``None``."""
+        text = _one_line(text).lower()
+        for item_type in self.list_types():
+            if text and text in (item_type["name"].lower(), item_type["id"].lower()):
+                return item_type
         return None
 
-    @staticmethod
-    def _index(names, name):
-        for index, existing in enumerate(names):
-            if existing.lower() == name.lower():
-                return index
-        return -1
+    def item_type(self, item):
+        """The type of an item (Generic if its type no longer exists)."""
+        try:
+            return self.get_type(item.get("type") or GENERIC)
+        except StorageError:
+            return self.get_type(GENERIC)
 
-    def add_custom_field(self, name, box_id=None):
-        """Add a custom field for all items (``box_id`` None) or for the
-        items of one box. Returns the cleaned name."""
-        name = check_field_name(name)
-        names, save, _items = self._scope(box_id)
-        if self._index(names, name) >= 0:
-            raise StorageError("There is already a field '%s'." % name)
-        if box_id and self._index(self.general_fields(), name) >= 0:
-            raise StorageError("'%s' is already a field of all items." % name)
-        names.append(name)
-        save(names)
+    def all_extra_kinds(self):
+        """``{name: kind}`` of the own fields of every type (for the importer)."""
+        kinds = {}
+        for item_type in self.list_types():
+            for key, label, kind in item_type["fields"]:
+                if key.startswith(EXTRA_PREFIX):
+                    other = [n for n in kinds if n.lower() == label.lower()]
+                    name = other[0] if other else label
+                    if kinds.get(name) != "text":
+                        kinds[name] = kind
+        return kinds
+
+    def type_counts(self):
+        """``{type_id: number of items}``."""
+        counts = {}
+        for item in self.list_items():
+            counts[item.get("type")] = counts.get(item.get("type"), 0) + 1
+        return counts
+
+    def type_items(self, type_id):
+        return [i for i in self.list_items() if i.get("type") == type_id]
+
+    def _check_type_name(self, name, exclude=None):
+        name = _one_line(name)
+        if not name:
+            raise StorageError("A type needs a name.")
+        if len(name) > MAX_FIELD_NAME:
+            raise StorageError("A type name can have at most %d characters." % MAX_FIELD_NAME)
+        for other in self.list_types():
+            if other["id"] != exclude and other["name"].lower() == name.lower():
+                raise StorageError("There is already a type called '%s'." % other["name"])
         return name
 
-    def rename_custom_field(self, old, new, box_id=None):
-        """Rename a field; the values in the items are kept."""
-        new = check_field_name(new)
-        names, save, items = self._scope(box_id)
-        index = self._index(names, old)
-        if index < 0:
-            raise StorageError("No field named '%s'." % old)
-        old = names[index]
-        if new.lower() != old.lower() and self._index(names, new) >= 0:
-            raise StorageError("There is already a field '%s'." % new)
-        if box_id and self._index(self.general_fields(), new) >= 0:
-            raise StorageError("'%s' is already a field of all items." % new)
-        changes = []
-        for item in items:
-            key = self._value_key(item, old)
-            if key is None or key == new:
-                continue
-            other = self._value_key(item, new)
-            if other is not None and other != key:
-                raise StorageError("Item '%s' already has a value for '%s'." % (item["name"], new))
-            changes.append((item, key))
-        names[index] = new
-        save(names)
-        for item, key in changes:
-            item["custom"] = dict((new if k == key else k, v) for k, v in item["custom"].items())
-            item["modified"] = _now()
-            self._write(self._item_path(item["id"]), item)
+    def _user_type(self, type_id):
+        """``(all user types, the one with type_id)``; bundled types cannot change."""
+        if type_id in BUNDLED_IDS:
+            raise StorageError("The types that come with the app cannot be changed. "
+                               "Make a copy of it instead.")
+        types = self._load_user_types()
+        for item_type in types:
+            if item_type["id"] == type_id:
+                return types, item_type
+        raise StorageError("No item type with id %s" % (type_id,))
+
+    def create_type(self, name, fields=None, based_on=None):
+        """Create a user type. ``fields`` is a list of standard keys and
+        ``{"name", "kind"}`` dicts; ``based_on`` copies another type's fields."""
+        name = self._check_type_name(name)
+        if based_on:
+            resolved = list(self.get_type(based_on)["fields"])
+        else:
+            resolved = _clean_type_fields(fields or [])
+        types = self._load_user_types()
+        new = {"id": _new_id(), "name": name, "bundled": False, "fields": resolved}
+        types.append(new)
+        self._save_user_types(types)
         return new
 
-    def field_value_count(self, name, box_id=None):
-        """How many items would lose their value if the field was removed."""
-        return len(self._items_losing(name, box_id))
+    def rename_type(self, type_id, name):
+        types, item_type = self._user_type(type_id)
+        item_type["name"] = self._check_type_name(name, exclude=type_id)
+        self._save_user_types(types)
+        return item_type
 
-    def _items_losing(self, name, box_id):
-        names, _save, items = self._scope(box_id)
-        index = self._index(names, name)
-        if index < 0:
-            raise StorageError("No field named '%s'." % name)
-        name = names[index]
-        general = [n.lower() for n in self.general_fields()] if box_id else []
-        result = []
-        for item in items:
-            if self._value_key(item, name) is not None:
-                if box_id and name.lower() in general:
-                    continue  # still a field of all items
-                if not box_id and item.get("box") and self.box_exists(item["box"]) and \
-                        self._index(self.box_fields(item["box"]), name) >= 0:
-                    continue  # still a field of the item's box
-                result.append(item)
-        return result
+    def delete_type(self, type_id):
+        """Remove a user type. Only possible when no item has it."""
+        types, item_type = self._user_type(type_id)
+        count = len(self.type_items(type_id))
+        if count:
+            raise StorageError("%d item(s) have the type '%s'. Give them another type first."
+                               % (count, item_type["name"]))
+        types.remove(item_type)
+        self._save_user_types(types)
+        return True
 
-    def remove_custom_field(self, name, box_id=None):
-        """Remove a field and its values in the items it applied to.
-        Returns the number of items whose value was removed."""
-        names, save, _items = self._scope(box_id)
-        index = self._index(names, name)
-        if index < 0:
-            raise StorageError("No field named '%s'." % name)
-        name = names[index]
-        losing = self._items_losing(name, box_id)
-        del names[index]
-        save(names)
-        for item in losing:
-            item["custom"].pop(self._value_key(item, name), None)
+    @staticmethod
+    def _field_index(item_type, key):
+        for index, (other, _label, _kind) in enumerate(item_type["fields"]):
+            if other.lower() == key.lower():
+                return index
+        raise StorageError("The type '%s' has no field %s." % (item_type["name"], key))
+
+    def add_type_field(self, type_id, field, kind="line"):
+        """Add a standard field (its key, e.g. "price") or a new own field
+        (its name, with ``kind`` "line" or "text") to a user type. Returns
+        the field key."""
+        types, item_type = self._user_type(type_id)
+        entry = field if field in STANDARD_KEYS else {"name": field, "kind": kind}
+        item_type["fields"] = _clean_type_fields(_fields_to_json(item_type["fields"]) + [entry])
+        self._save_user_types(types)
+        return item_type["fields"][-1][0]
+
+    def type_field_value_count(self, type_id, key):
+        """How many items of the type have a value for field ``key``."""
+        item_type = self.get_type(type_id)
+        self._field_index(item_type, key)
+        return len([i for i in self.type_items(type_id) if _has_value(self.field_value(i, key))])
+
+    def remove_type_field(self, type_id, key):
+        """Remove a field from a user type and delete its values in the
+        items of that type. Returns the number of items that had a value."""
+        types, item_type = self._user_type(type_id)
+        index = self._field_index(item_type, key)
+        key = item_type["fields"][index][0]
+        del item_type["fields"][index]
+        self._save_user_types(types)
+        count = 0
+        for item in self.type_items(type_id):
+            if not _has_value(self.field_value(item, key)):
+                continue
+            count += 1
+            if key.startswith(EXTRA_PREFIX):
+                name = key[len(EXTRA_PREFIX):].lower()
+                item["extra"] = dict((n, v) for n, v in item["extra"].items() if n.lower() != name)
+            else:
+                item[key] = [] if key == "links" else None if FIELD_KINDS[key] in ("price", "year") else ""
             item["modified"] = _now()
             self._write(self._item_path(item["id"]), item)
-        return len(losing)
+        return count
+
+    def rename_type_field(self, type_id, key, new_name):
+        """Rename one of a user type's own fields; the values are kept."""
+        types, item_type = self._user_type(type_id)
+        index = self._field_index(item_type, key)
+        key, _label, kind = item_type["fields"][index]
+        if not key.startswith(EXTRA_PREFIX):
+            raise StorageError("Standard fields cannot be renamed.")
+        fields = _fields_to_json(item_type["fields"])
+        fields[index] = {"name": new_name, "kind": kind}
+        item_type["fields"] = _clean_type_fields(fields)
+        new_name = item_type["fields"][index][1]
+        self._save_user_types(types)
+        old = key[len(EXTRA_PREFIX):].lower()
+        for item in self.type_items(type_id):
+            if any(n.lower() == old for n in item["extra"]):
+                item["extra"] = dict((new_name if n.lower() == old else n, v) for n, v in item["extra"].items())
+                item["modified"] = _now()
+                self._write(self._item_path(item["id"]), item)
+        return EXTRA_PREFIX + new_name
+
+    def set_type_field_kind(self, type_id, key, kind):
+        """Make one of a user type's own fields one line or several lines."""
+        types, item_type = self._user_type(type_id)
+        index = self._field_index(item_type, key)
+        fields = _fields_to_json(item_type["fields"])
+        if not isinstance(fields[index], dict):
+            raise StorageError("Only the type's own fields can be changed.")
+        fields[index]["kind"] = kind
+        item_type["fields"] = _clean_type_fields(fields)
+        self._save_user_types(types)
+
+    def move_type_field(self, type_id, key, offset):
+        """Move a field of a user type up (-1) or down (+1)."""
+        types, item_type = self._user_type(type_id)
+        index = self._field_index(item_type, key)
+        target = max(0, min(len(item_type["fields"]) - 1, index + offset))
+        item_type["fields"].insert(target, item_type["fields"].pop(index))
+        self._save_user_types(types)
+        return target
 
     # --------------------------------------------------------------- trash
     def _trash_folder(self, kind, obj_id):
@@ -873,20 +1095,24 @@ class Store(object):
 
     # -------------------------------------------------------------- search
     def search_items(self, text="", box=None, location="", origin="",
-                     min_price=None, max_price=None, with_images=False, sort="name"):
+                     min_price=None, max_price=None, with_images=False, sort="name", type_id=None):
         """Find items.
 
         Every word of ``text`` must appear (case-insensitive) in one of the
-        fields or the box label. ``box`` limits to one box id.
-        ``location``/``origin`` are "contains" filters, prices in Euro.
+        fields, the box label or the type name. ``box`` limits to one box
+        id, ``type_id`` to one type. ``location``/``origin`` are "contains"
+        filters, prices in Euro.
         """
         labels = dict((b["id"], b["label"]) for b in self.list_boxes())
+        type_names = dict((t["id"], t["name"]) for t in self.list_types())
         words = text.lower().split()
         min_price = parse_price(min_price)
         max_price = parse_price(max_price)
         result = []
         for item in self.list_items():
             if box and item.get("box") != box:
+                continue
+            if type_id and item.get("type") != type_id:
                 continue
             if location and location.lower() not in item.get("location", "").lower():
                 continue
@@ -901,9 +1127,10 @@ class Store(object):
                 continue
             if words:
                 parts = [item.get("name", ""), " ".join(item.get("links", [])),
-                         labels.get(item.get("box"), ""), str(item.get("year_acquired") or "")]
+                         labels.get(item.get("box"), ""), str(item.get("year_acquired") or ""),
+                         type_names.get(item.get("type"), "")]
                 parts += [item.get(key, "") for key in TEXT_FIELDS]
-                for name, value in (item.get("custom") or {}).items():
+                for name, value in (item.get("extra") or {}).items():
                     parts += [name, value]
                 haystack = " ".join(parts).lower()
                 if not all(word in haystack for word in words):
@@ -915,6 +1142,8 @@ class Store(object):
             result.sort(key=lambda i: i.get("created", ""), reverse=True)
         elif sort == "year":
             result.sort(key=lambda i: (i.get("year_acquired") is None, -(i.get("year_acquired") or 0)))
+        elif sort == "type":
+            result.sort(key=lambda i: (type_names.get(i.get("type"), "").lower(), i.get("name", "").lower()))
         elif sort == "box":
             result.sort(key=lambda i: (labels.get(i.get("box"), "").lower(), i.get("name", "").lower()))
         return result

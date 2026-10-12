@@ -11,7 +11,6 @@ import shutil
 from datetime import datetime
 
 from .pdf import PDFDocument
-from .storage import ITEM_FIELD_SPECS
 
 
 def slugify(text, fallback="export"):
@@ -30,25 +29,25 @@ def format_price(price):
 
 
 def detail_rows(store, item):
-    """``[(label, text)]`` of the filled-in details of an item, in display
-    order: standard details, then custom fields, then notes. Name, box and
-    links are not included."""
-    rows = []
-    for key, label, kind in ITEM_FIELD_SPECS:
-        if key in ("name", "links", "notes"):
+    """``[(label, text)]`` for an item, in display order: its type, the
+    filled-in fields of the type (then values that do not belong to the
+    type, if any), and notes last. Name, box and links are not included."""
+    rows = [("Type", store.item_type(item)["name"])]
+    notes = ""
+    for key, label, kind, value in store.item_fields(item):
+        if key == "notes":
+            notes = value
             continue
-        value = item.get(key)
+        if key in ("name", "links"):
+            continue
         if kind == "price":
             value = format_price(value)
         elif value is not None:
             value = str(value)
         if value:
             rows.append((label, value))
-    for name, value in store.item_custom_fields(item):
-        if value:
-            rows.append((name, value))
-    if item.get("notes"):
-        rows.append(("Notes", item["notes"]))
+    if notes:
+        rows.append(("Notes", notes))
     return rows
 
 

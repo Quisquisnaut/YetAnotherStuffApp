@@ -7,23 +7,42 @@ same storage, import, export and backup modules.
 import os
 
 from . import backup, config, export, guide
-from .importer import import_item_file, suggested_box
-from .storage import SORT_KEYS, StorageError
+from .importer import import_item_file, suggested_box, suggested_type
+from .itemtypes import GENERIC
+from .storage import EXTRA_PREFIX, FIELD_LABELS, SORT_KEYS, STANDARD_KEYS, StorageError
 from .ui import Cancelled
 
 TRASH_DAYS = 30
 
-# Details asked after "More details?" (the main ones are always asked).
-MORE_DETAILS = (
-    ("product_code", "Product code"),
-    ("serial_number", "Serial number"),
-    ("maker", "Maker"),
-    ("brand", "Brand"),
-    ("seller", "Seller"),
-    ("made_in", "Made in"),
-    ("year_acquired", "Year of acquisition (e.g. 2023)"),
-    ("issues", "Issues"),
-)
+# Standard fields asked after "More details?" (the other fields of the
+# item's type are always asked).
+MORE_DETAILS = ("product_code", "serial_number", "maker", "brand", "seller", "made_in",
+                "year_acquired", "issues")
+
+FORM_LABELS = {
+    "links": "Web links (comma separated)",
+    "price": "Paid price (EUR)",
+    "origin": "Origin (where it came from)",
+    "year_acquired": "Year of acquisition (e.g. 2023)",
+}
+
+
+def form_value(kind, value):
+    """A field value as text for a form."""
+    if kind == "links":
+        return ", ".join(value or [])
+    if kind == "price":
+        return "%.2f" % value if value is not None else ""
+    return "" if value is None else str(value)
+
+
+def type_label(item_type, counts=None):
+    label = item_type["name"]
+    if counts is not None:
+        label += " (%d items)" % counts.get(item_type["id"], 0)
+    if not item_type.get("bundled"):
+        label += " - your type"
+    return label
 
 
 def item_summary(store, item):
@@ -82,7 +101,7 @@ class App(object):
             ("Export all", self.export_all),
             ("Trash (recently deleted)", self.trash_menu),
             ("Backups", self.backups_menu),
-            ("Custom fields", self.custom_fields_menu),
+            ("Item types", self.types_menu),
             ("Settings: data folder", self.settings),
             ("Help", self.help_menu),
         ]
@@ -137,34 +156,33 @@ class App(object):
         index = self.ui.choose(title, labels)
         return None if index is None else items[index]
 
-    def _item_form(self, title, item=None, box_id=None):
-        """Ask for the item details: the main ones, then (if wanted) the
-        other details and the custom fields of the box."""
+    def pick_type(self, title="Choose the item type"):
+        """Generic first, then the other types."""
+        types = self.store.list_types()
+        counts = self.store.type_counts()
+        index = self.ui.choose(title, [type_label(t, counts) for t in types])
+        return None if index is None else types[index]
+
+    def _item_form(self, title, item=None, type_id=GENERIC):
+        """Ask for the fields of the item's type: the main ones, then (if
+        wanted) the less common standard details."""
         item = item or {}
-        fields = [
-            ("name", "Name", item.get("name", "")),
-            ("description", "Description", item.get("description", "")),
-            ("location", "Location", item.get("location", "")),
-            ("links", "Web links (comma separated)", ", ".join(item.get("links", []))),
-            ("price", "Paid price (EUR)", "%.2f" % item["price"] if item.get("price") is not None else ""),
-            ("origin", "Origin (where it came from)", item.get("origin", "")),
-            ("notes", "Notes", item.get("notes", "")),
-        ]
-        data = self.ui.form(title, fields)
-        custom = self.store.item_custom_fields(dict(item, box=box_id or item.get("box")))
-        names = ", ".join(n for n, _v in custom)
-        if not self.ui.confirm("More details (product code, serial number, maker, brand, seller, made in, "
-                               "year of acquisition, issues%s)?" % (", " + names if names else "")):
-            return data
-        more = [(key, label, item.get(key) or "") for key, label in MORE_DETAILS]
-        more = [(k, l, str(v)) for k, l, v in more]
-        more += [("custom:" + n, n, v) for n, v in custom]
-        for key, value in self.ui.form("More details", more).items():
-            if key.startswith("custom:"):
-                data.setdefault("custom", {})[key[len("custom:"):]] = value
+        rows = self.store.item_fields(item, type_id if not item else None)
+        main = [("name", "Name", item.get("name", ""))]
+        more = []
+        for key, label, kind, value in rows:
+            entry = (key, FORM_LABELS.get(key, label), form_value(kind, value))
+            (more if key in MORE_DETAILS else main).append(entry)
+        data = self.ui.form(title, main)
+        if more and self.ui.confirm("More details (%s)?" % ", ".join(FIELD_LABELS.get(k, k) for k, _l, _v in more)):
+            data.update(self.ui.form("More details", more))
+        result = {}
+        for key, value in data.items():
+            if key.startswith(EXTRA_PREFIX):
+                result.setdefault("extra", {})[key[len(EXTRA_PREFIX):]] = value
             else:
-                data[key] = value
-        return data
+                result[key] = value
+        return result
 
     def _export(self, func, *args):
         self.ui.show_file(func(self.store, *args))
@@ -192,7 +210,6 @@ class App(object):
                 ("Edit box", self.edit_box),
                 ("Export to PDF", lambda b: self._export(export.export_box_pdf, b)),
                 ("Export to Markdown", lambda b: self._export(export.export_box_markdown, b)),
-                ("Custom fields of this box", self.custom_fields_menu),
                 ("Delete box", self.delete_box),
             ]
             title = "Box: %s (%d items, ID %s)" % (box["label"], len(items), box["id"])
@@ -241,9 +258,12 @@ class App(object):
             if not box:
                 return None
             box_id = box["id"]
-        data = self._item_form("Create Item", box_id=box_id)
+        item_type = self.pick_type("Type of the new item (Generic has every standard field)")
+        if not item_type:
+            return None
+        data = self._item_form("Create %s" % item_type["name"], type_id=item_type["id"])
         name = data.pop("name", "")
-        item = self.store.create_item(name, box_id, **data)
+        item = self.store.create_item(name, box_id, item_type["id"], **data)
         if self.ui.confirm("Add images to '%s'?" % item["name"]):
             self.add_images(item["id"])
         self.ui.message("Item '%s' created." % item["name"])
@@ -255,9 +275,8 @@ class App(object):
             actions = [
                 ("Show details", lambda i: self.ui.message(item_summary(self.store, self.store.get_item(i)))),
                 ("Edit item", self.edit_item),
-                ("Edit description (multi-line)", lambda i: self.edit_text(i, "description")),
-                ("Edit notes (multi-line)", lambda i: self.edit_text(i, "notes")),
-                ("Edit issues (multi-line)", lambda i: self.edit_text(i, "issues")),
+                ("Edit a multi-line field (description, notes...)", self.edit_text),
+                ("Change type", self.change_type),
                 ("Clone item (duplicate with a new ID)", self.clone_item),
                 ("Move to another box", self.item_move),
                 ("Import images", self.add_images),
@@ -267,7 +286,8 @@ class App(object):
                 ("Export to Markdown", lambda i: self._export(export.export_item_markdown, i)),
                 ("Delete item", self.delete_item),
             ]
-            index = self.ui.choose("Item: %s" % item["name"], [a[0] for a in actions])
+            title = "Item: %s (%s)" % (item["name"], self.store.item_type(item)["name"])
+            index = self.ui.choose(title, [a[0] for a in actions])
             if index is None:
                 return
             if self._safe(actions[index][1], item_id) == "deleted":
@@ -288,54 +308,158 @@ class App(object):
             if clone:
                 self.item_menu(clone["id"])
 
-    def custom_fields_menu(self, box_id=None):
-        """Add, rename or remove custom fields of all items (``box_id``
-        None) or of the items of one box."""
-        while True:
-            if box_id:
-                box = self.store.get_box(box_id)
-                names = self.store.box_fields(box_id)
-                general = self.store.general_fields()
-                title = "Custom fields of box '%s'" % box["label"]
-                if general:
-                    title += " (all items also have: %s)" % ", ".join(general)
-            else:
-                names = self.store.general_fields()
-                title = "Custom fields of all items (box fields: in each box's menu)"
-            index = self.ui.choose(title, ["Add a field"] + names)
-            if index is None:
-                return
-            if index == 0:
-                self._safe(self._add_field, box_id)
-            else:
-                self._safe(self._field_actions, names[index - 1], box_id)
-
-    def _add_field(self, box_id):
-        name = self.ui.form("Add a field", [("name", "Field name (e.g. Warranty, Color, Size)", "")])["name"]
-        name = self.store.add_custom_field(name, box_id)
-        self.ui.message("Field '%s' added." % name)
-
-    def _field_actions(self, name, box_id):
-        index = self.ui.choose("Field '%s'" % name, ["Rename", "Remove"])
-        if index == 0:
-            new = self.ui.form("Rename field", [("name", "New name", name)])["name"]
-            self.store.rename_custom_field(name, new, box_id)
-        elif index == 1:
-            count = self.store.field_value_count(name, box_id)
-            text = "Remove the field '%s'?" % name
-            if count:
-                text += " Its value will be deleted from %d item(s)." % count
-            if self.ui.confirm(text):
-                self.store.remove_custom_field(name, box_id)
-
     def edit_item(self, item_id):
         data = self._item_form("Edit Item", self.store.get_item(item_id))
         self.store.update_item(item_id, **data)
 
-    def edit_text(self, item_id, field):
+    def edit_text(self, item_id, key=None):
+        """Edit one of the item's multi-line fields with several lines."""
         item = self.store.get_item(item_id)
-        text = self.ui.text("%s of %s" % (field.capitalize(), item["name"]), item.get(field, ""))
-        self.store.update_item(item_id, **{field: text})
+        rows = [r for r in self.store.item_fields(item) if r[2] == "text"]
+        if key is None:
+            if not rows:
+                self.ui.message("The type of this item has no multi-line fields.")
+                return
+            index = self.ui.choose("Edit which field?", [r[1] for r in rows])
+            if index is None:
+                return
+            key = rows[index][0]
+        label = [r[1] for r in rows if r[0] == key] or [key]
+        text = self.ui.text("%s of %s" % (label[0], item["name"]), self.store.field_value(item, key) or "")
+        if key.startswith(EXTRA_PREFIX):
+            self.store.update_item(item_id, extra={key[len(EXTRA_PREFIX):]: text})
+        else:
+            self.store.update_item(item_id, **{key: text})
+
+    def change_type(self, item_id):
+        item = self.store.get_item(item_id)
+        current = self.store.item_type(item)
+        item_type = self.pick_type("New type for '%s' (now: %s)" % (item["name"], current["name"]))
+        if not item_type or item_type["id"] == item.get("type"):
+            return
+        lost = self.store.lost_on_type_change(item, item_type["id"])
+        if lost and not self.ui.confirm("The type '%s' has no field for: %s. These values will be "
+                                        "DELETED. Change the type?" % (item_type["name"], ", ".join(lost))):
+            return
+        self.store.change_item_type(item_id, item_type["id"])
+        self.ui.message("'%s' is now of type '%s'." % (item["name"], item_type["name"]))
+
+    # --------------------------------------------------------------- types
+    def types_menu(self):
+        while True:
+            types = self.store.list_types()
+            counts = self.store.type_counts()
+            index = self.ui.choose("Item types (a type is the set of fields of its items)",
+                                   ["Create a type"] + [type_label(t, counts) for t in types])
+            if index is None:
+                return
+            if index == 0:
+                created = self._safe(self.create_type)
+                if created:
+                    self._safe(self.type_menu, created["id"])
+            else:
+                self._safe(self.type_menu, types[index - 1]["id"])
+
+    def create_type(self, based_on=None):
+        name = self.ui.form("Create a type", [("name", "Name of the type (e.g. Board game)", "")])["name"]
+        if based_on is None:
+            types = self.store.list_types()
+            index = self.ui.choose("Start with the fields of", ["No fields (only the name)"] +
+                                   [t["name"] for t in types])
+            if index is None:
+                return None
+            based_on = types[index - 1]["id"] if index else None
+        item_type = self.store.create_type(name, based_on=based_on)
+        self.ui.message("Type '%s' created." % item_type["name"])
+        return item_type
+
+    def type_menu(self, type_id):
+        while True:
+            item_type = self.store.get_type(type_id)
+            fields = ", ".join(label for _k, label, _kind in item_type["fields"]) or "(only the name)"
+            count = self.store.type_counts().get(type_id, 0)
+            if item_type["bundled"]:
+                title = "Type: %s (comes with the app, %d items)\nFields: Name, %s" % (
+                    item_type["name"], count, fields)
+                actions = [("Make a copy to change it", lambda t: self.create_type(based_on=t))]
+            else:
+                title = "Type: %s (%d items)\nFields: Name, %s" % (item_type["name"], count, fields)
+                actions = [
+                    ("Rename type", self.rename_type),
+                    ("Add a standard field", self.add_standard_field),
+                    ("Add an own field", self.add_own_field),
+                    ("Change a field (move, rename, remove)", self.change_field),
+                    ("Make a copy", lambda t: self.create_type(based_on=t)),
+                    ("Delete type", self.delete_type),
+                ]
+            index = self.ui.choose(title, [a[0] for a in actions])
+            if index is None:
+                return
+            if self._safe(actions[index][1], type_id) == "deleted":
+                return
+
+    def rename_type(self, type_id):
+        item_type = self.store.get_type(type_id)
+        name = self.ui.form("Rename type", [("name", "New name", item_type["name"])])["name"]
+        self.store.rename_type(type_id, name)
+
+    def add_standard_field(self, type_id):
+        have = set(k for k, _l, _kind in self.store.get_type(type_id)["fields"])
+        keys = [k for k in STANDARD_KEYS if k not in have]
+        if not keys:
+            self.ui.message("The type already has every standard field.")
+            return
+        index = self.ui.choose("Add which field?", [FIELD_LABELS[k] for k in keys])
+        if index is not None:
+            self.store.add_type_field(type_id, keys[index])
+
+    def add_own_field(self, type_id):
+        name = self.ui.form("Add an own field", [("name", "Field name (e.g. Players, Warranty until)", "")])["name"]
+        kind = self.ui.choose("Kind of field", ["One line", "Several lines"])
+        if kind is not None:
+            self.store.add_type_field(type_id, name, "text" if kind else "line")
+
+    def change_field(self, type_id):
+        fields = self.store.get_type(type_id)["fields"]
+        if not fields:
+            self.ui.message("The type has no fields yet.")
+            return
+        index = self.ui.choose("Change which field?", [label for _k, label, _kind in fields])
+        if index is None:
+            return
+        key, label, kind = fields[index]
+        own = key.startswith(EXTRA_PREFIX)
+        actions = ["Move up", "Move down", "Remove"]
+        if own:
+            actions += ["Rename", "Make it %s" % ("several lines" if kind == "line" else "one line")]
+        action = self.ui.choose("Field '%s'" % label, actions)
+        if action in (0, 1):
+            self.store.move_type_field(type_id, key, -1 if action == 0 else 1)
+        elif action == 2:
+            count = self.store.type_field_value_count(type_id, key)
+            text = "Remove the field '%s' from the type?" % label
+            if count:
+                text += " Its value will be DELETED from %d item(s)." % count
+            if self.ui.confirm(text):
+                self.store.remove_type_field(type_id, key)
+        elif action == 3:
+            name = self.ui.form("Rename field", [("name", "New name (values are kept)", label)])["name"]
+            self.store.rename_type_field(type_id, key, name)
+        elif action == 4:
+            self.store.set_type_field_kind(type_id, key, "text" if kind == "line" else "line")
+
+    def delete_type(self, type_id):
+        item_type = self.store.get_type(type_id)
+        count = len(self.store.type_items(type_id))
+        if count:
+            self.ui.message("%d item(s) have the type '%s'. Give them another type first (item menu > "
+                            "Change type); only unused types can be deleted." % (count, item_type["name"]),
+                            title="Cannot delete")
+            return None
+        if self.ui.confirm("Delete the type '%s'?" % item_type["name"]):
+            self.store.delete_type(type_id)
+            return "deleted"
+        return None
 
     def item_move(self, item_id):
         item = self.store.get_item(item_id)
@@ -383,8 +507,11 @@ class App(object):
             box = self.pick_box("Import the item into which box?")
         if not box:
             return None
-        item, warnings = import_item_file(self.store, path, box["id"])
-        text = "Item '%s' imported into '%s'." % (item["name"], box["label"])
+        item_type = suggested_type(self.store, path) or self.pick_type("Type of the imported item")
+        if not item_type:
+            return None
+        item, warnings = import_item_file(self.store, path, box["id"], item_type["id"])
+        text = "%s '%s' imported into '%s'." % (item_type["name"], item["name"], box["label"])
         if warnings:
             text += "\n" + "\n".join(warnings)
         self.ui.message(text)
@@ -439,6 +566,9 @@ class App(object):
         boxes = self.store.list_boxes()
         index = self.ui.choose("Filter by box", ["All boxes"] + [b["label"] for b in boxes])
         data["box"] = boxes[index - 1]["id"] if index else None
+        types = self.store.list_types()
+        index = self.ui.choose("Filter by type", ["All types"] + [t["name"] for t in types])
+        data["type_id"] = types[index - 1]["id"] if index else None
         sort = self.ui.choose("Sort by", list(SORT_KEYS))
         data["sort"] = SORT_KEYS[sort or 0]
         self.store.search_items(**data)  # validate before keeping
@@ -559,6 +689,11 @@ def describe_filters(store, filters):
     if filters.get("box"):
         try:
             parts.append("box %s" % store.get_box(filters["box"])["label"])
+        except StorageError:
+            pass
+    if filters.get("type_id"):
+        try:
+            parts.append("type %s" % store.get_type(filters["type_id"])["name"])
         except StorageError:
             pass
     for key, label in (("location", "location"), ("origin", "origin")):

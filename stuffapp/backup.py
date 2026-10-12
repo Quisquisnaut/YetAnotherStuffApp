@@ -1,8 +1,7 @@
 """Full backups of the data folder as zip files.
 
-A backup contains ``boxes/``, ``items/``, ``images/`` and ``meta/`` (custom
-fields). Backups are made
-automatically once a day when the app starts (if something changed), and
+A backup contains ``boxes/``, ``items/``, ``images/`` and ``meta/`` (the
+user's item types). Backups are made automatically once a day when the app starts (if something changed), and
 before every restore; they can also be made by hand. The newest
 ``MAX_BACKUPS`` are kept.
 

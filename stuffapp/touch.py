@@ -25,8 +25,10 @@ import ui
 from . import __version__, backup, config, export, guide
 from .app import TRASH_DAYS, describe_filters, startup
 from .images import pil_to_jpeg_bytes, to_jpeg_bytes
-from .importer import import_item_file, suggested_box
-from .storage import ITEM_FIELD_SPECS, SORT_KEYS, Store, StorageError, is_safe_link
+from .importer import import_item_file, suggested_box, suggested_type
+from .itemtypes import GENERIC
+from .storage import (EXTRA_PREFIX, FIELD_LABELS, SORT_KEYS, STANDARD_KEYS, Store, StorageError,
+                      is_safe_link)
 from .ui import IMAGE_FILE_EXTS, TEXT_FILE_EXTS, find_files
 
 try:
@@ -290,8 +292,8 @@ class HomeScreen(TableScreen):
                 {"title": "Trash", "subtitle": "%d recently deleted" % len(store.list_trash()),
                  "on_tap": lambda: self.app.push(TrashScreen(self.app))},
                 {"title": "Backups", "on_tap": lambda: self.app.push(BackupsScreen(self.app))},
-                {"title": "Custom fields", "subtitle": "Your own item details, for all items or one box",
-                 "on_tap": lambda: self.app.push(CustomFieldsScreen(self.app))},
+                {"title": "Item types", "subtitle": "Book, Device, Plant... and your own types",
+                 "on_tap": lambda: self.app.push(TypesScreen(self.app))},
                 {"title": "Settings", "subtitle": "Data location",
                  "on_tap": lambda: self.app.push(SettingsScreen(self.app))},
                 {"title": "Help", "subtitle": "How to use the app",
@@ -334,9 +336,10 @@ class BoxScreen(TableScreen):
                          "color": MUTED, "lines": 0})
         self.show([(box["label"], head), ("Items  (%s)" % count_text(store, items), rows)])
 
+    @task
     def on_new_item(self, sender):
         if not self.gone:
-            self.app.push(ItemEditor(self.app, box_id=self.box_id))
+            self.app.new_item_in(self.box_id)
 
     def on_actions(self, sender):
         if not self.gone:
@@ -444,7 +447,8 @@ class ItemScreen(Screen):
 
 
 class ItemEditor(Screen):
-    """Create (``box_id``) or edit (``item_id``) an item."""
+    """Create (``box_id``, ``type_id``) or edit (``item_id``) an item. The
+    fields shown are those of the item's type."""
 
     LABELS = {
         "links": "Web links (one per line)",
@@ -453,30 +457,22 @@ class ItemEditor(Screen):
         "year_acquired": "Year of acquisition",
     }
 
-    def __init__(self, app, item_id=None, box_id=None):
+    def __init__(self, app, item_id=None, box_id=None, type_id=GENERIC):
         Screen.__init__(self, app, "Edit Item" if item_id else "New Item")
         self.item_id = item_id
-        item = app.store.get_item(item_id) if item_id else {}
-        self.item_custom = dict(item.get("custom") or {})
-        self.box_id = item.get("box") or box_id
+        self.item = app.store.get_item(item_id) if item_id else {}
+        self.box_id = self.item.get("box") or box_id
+        self.type_id = app.store.item_type(self.item)["id"] if item_id else type_id
+        self.typed = {}  # what was typed, kept when the type changes
         self.scroll = ui.ScrollView(frame=self.bounds, flex="WH")
         self.scroll.background_color = BG
         self.add_subview(self.scroll)
         self.box_button = link_button("", (PAD, PAD, 300, 34), self.on_pick_box)
+        self.type_button = link_button("", (PAD, PAD, 300, 34), self.on_pick_type)
         self.scroll.add_subview(self.box_button)
+        self.scroll.add_subview(self.type_button)
         self.widgets = []
-        for key, label, kind in ITEM_FIELD_SPECS:
-            value = item.get(key)
-            if key == "links":
-                value = "\n".join(value or [])
-            elif kind == "price":
-                value = "%.2f" % value if value is not None else ""
-            elif value is not None:
-                value = str(value)
-            self._add_widget(key, self.LABELS.get(key, label), "text" if kind == "links" else kind, value)
-        self.custom_header = ui.Label(text="CUSTOM FIELDS", font=("<system-bold>", 12), text_color=MUTED)
-        self.scroll.add_subview(self.custom_header)
-        self._build_custom()
+        self._build_fields()
         self.buttons(("Save", self.on_save))
         self._update_box_title()
 
@@ -501,19 +497,30 @@ class ItemEditor(Screen):
         self.scroll.add_subview(field)
         self.widgets.append((key, kind, title, field))
 
-    def _build_custom(self):
-        """(Re)create the custom field inputs for the chosen box, keeping
-        what was typed. Values of fields of another box are kept too."""
-        for key, kind, title, field in [w for w in self.widgets if w[0].startswith("custom:")]:
-            self.item_custom[key[len("custom:"):]] = field.text
+    def _build_fields(self):
+        """(Re)create the inputs for the fields of the chosen type, keeping
+        what was typed in fields that both types have."""
+        for key, kind, title, field in self.widgets:
+            self.typed[key.lower()] = field.text
             self.scroll.remove_subview(title)
             self.scroll.remove_subview(field)
-            self.widgets.remove((key, kind, title, field))
-        fields = self.app.store.item_custom_fields({"box": self.box_id, "custom": self.item_custom})
-        for name, value in fields:
-            self._add_widget("custom:" + name, name, "line", value)
-        self.custom_header.text = "CUSTOM FIELDS" if fields else \
-            "NO CUSTOM FIELDS YET: ADD THEM ON THE HOME SCREEN (CUSTOM FIELDS) OR IN THE BOX (ACTIONS)"
+        self.widgets = []
+        store = self.app.store
+        same_type = bool(self.item_id) and self.type_id == store.item_type(self.item)["id"]
+        rows = [("name", "name", "line", self.item.get("name"))]
+        rows += store.item_fields(self.item, self.type_id, leftovers=same_type)
+        for key, label, kind, value in rows:
+            if key.lower() in self.typed:
+                value = self.typed[key.lower()]
+            elif kind == "links":
+                value = "\n".join(value or [])
+            elif kind == "price":
+                value = "%.2f" % value if value is not None else ""
+            elif value is not None:
+                value = str(value)
+            label = self.LABELS.get(key, FIELD_LABELS.get(key, label))
+            self._add_widget(key, label, "text" if kind == "links" else kind, value)
+        self.type_button.subviews[0].text = "Type: %s  \u203a" % store.get_type(self.type_id)["name"]
         self.layout()
 
     def _update_box_title(self):
@@ -526,35 +533,25 @@ class ItemEditor(Screen):
         width = self.width - 2 * PAD
         y = PAD
         self.box_button.frame = (PAD, y, width, 34)
+        y += 38
+        self.type_button.frame = (PAD, y, width, 34)
         y += 44
-        header_done = False
         for key, kind, title, field in self.widgets:
-            if key.startswith("custom:") and not header_done:
-                y = self._layout_header(y, width)
-                header_done = True
             title.frame = (PAD, y, width, 18)
             y += 20
             height = 100 if kind == "text" else 36
             field.frame = (PAD, y, width, height)
             y += height + 14
-        if not header_done:
-            y = self._layout_header(y, width)
         self.scroll.content_size = (self.width, y + 300)
-
-    def _layout_header(self, y, width):
-        height = text_height(self.custom_header.text, width, ("<system-bold>", 12)) + 4
-        self.custom_header.number_of_lines = 0
-        self.custom_header.frame = (PAD, y + 6, width, height)
-        return y + height + 16
 
     def keyboard_frame_did_change(self, frame):
         self.scroll.content_inset = (0, 0, frame[3], 0)
 
     def values(self):
-        data = {"custom": {}}
+        data = {"extra": {}}
         for key, kind, title, field in self.widgets:
-            if key.startswith("custom:"):
-                data["custom"][key[len("custom:"):]] = field.text
+            if key.startswith(EXTRA_PREFIX):
+                data["extra"][key[len(EXTRA_PREFIX):]] = field.text
             else:
                 data[key] = field.text
         return data
@@ -565,11 +562,17 @@ class ItemEditor(Screen):
         if box:
             self.box_id = box["id"]
             self._update_box_title()
-            self._rebuild_custom_on_main()
+
+    @task
+    def on_pick_type(self, sender):
+        item_type = self.app.pick_type("Type of the item")
+        if item_type and item_type["id"] != self.type_id:
+            self.type_id = item_type["id"]
+            self._rebuild_on_main()
 
     @ui.on_main_thread
-    def _rebuild_custom_on_main(self):
-        self._build_custom()
+    def _rebuild_on_main(self):
+        self._build_fields()
 
     @task
     def on_save(self, sender):
@@ -584,6 +587,15 @@ class ItemEditor(Screen):
             self.box_id = box["id"]
             self._update_box_title()
         if self.item_id:
+            item = store.get_item(self.item_id)
+            if self.type_id != store.item_type(item)["id"]:
+                new_type = store.get_type(self.type_id)
+                lost = store.lost_on_type_change(item, self.type_id)
+                if lost and not confirm("Change the type?", "The type '%s' has no field for: %s.\n"
+                                        "These values will be deleted." % (new_type["name"], ", ".join(lost)),
+                                        "Change type"):
+                    return
+                store.change_item_type(self.item_id, self.type_id)
             store.update_item(self.item_id, **data)
             if store.get_item(self.item_id).get("box") != self.box_id:
                 store.move_item(self.item_id, self.box_id)
@@ -592,7 +604,7 @@ class ItemEditor(Screen):
             hud("Saved")
             return
         name = data.pop("name")
-        item = store.create_item(name, self.box_id, **data)
+        item = store.create_item(name, self.box_id, self.type_id, **data)
         self.app.refresh_all()
         self.app.pop()
         time.sleep(0.5)
@@ -673,6 +685,9 @@ class FilterScreen(TableScreen):
         box_label = "All boxes"
         if f.get("box") and store.box_exists(f["box"]):
             box_label = store.get_box(f["box"])["label"]
+        type_label = "All types"
+        if f.get("type_id") and store.type_exists(f["type_id"]):
+            type_label = store.get_type(f["type_id"])["name"]
 
         def row(title, value, handler):
             return {"title": title, "subtitle": value or "any", "on_tap": handler, "accessory": "none"}
@@ -680,6 +695,7 @@ class FilterScreen(TableScreen):
         self.show([
             ("Filter", [
                 row("Box", box_label, self.on_box),
+                row("Type", type_label, self.on_type),
                 row("Location contains", f.get("location"), functools.partial(self.on_text, "location", "Location contains")),
                 row("Origin contains", f.get("origin"), functools.partial(self.on_text, "origin", "Origin contains")),
                 row("Minimum price (\u20ac)", f.get("min_price"), functools.partial(self.on_text, "min_price", "Minimum price (\u20ac)")),
@@ -697,6 +713,14 @@ class FilterScreen(TableScreen):
         index = choose("Filter by box", ["All boxes"] + [b["label"] for b in boxes])
         if index is not None:
             self.app.filters["box"] = boxes[index - 1]["id"] if index else None
+            self.app.refresh_all()
+
+    @task
+    def on_type(self):
+        types = self.app.store.list_types()
+        index = choose("Filter by type", ["All types"] + [t["name"] for t in types])
+        if index is not None:
+            self.app.filters["type_id"] = types[index - 1]["id"] if index else None
             self.app.refresh_all()
 
     @task
@@ -815,63 +839,150 @@ class BackupsScreen(TableScreen):
             self.app.refresh_all()
 
 
-class CustomFieldsScreen(TableScreen):
-    """The user's own item fields: for all items, or for one box."""
+class TypesScreen(TableScreen):
+    """Item types: those that come with the app, then the user's own."""
 
-    def __init__(self, app, box_id=None):
-        TableScreen.__init__(self, app, "Box fields" if box_id else "Custom fields")
-        self.box_id = box_id
+    def __init__(self, app):
+        TableScreen.__init__(self, app, "Item types")
         self.buttons(("+", self.on_add))
         self.refresh()
 
     def refresh(self):
         store = self.app.store
-        general = store.general_fields()
-        if self.box_id:
-            box = store.get_box(self.box_id)
-            names = store.box_fields(self.box_id)
-            sections = [("Only for items in '%s'" % box["label"], self._rows(names))]
-            sections.append(("For all items (edit on the home screen)",
-                             [{"title": n, "color": MUTED} for n in general] or
-                             [{"title": "None", "color": MUTED}]))
-        else:
-            sections = [("For all items", self._rows(general))]
-            sections.append(("", [{"title": "Fields for one box only: open the box, tap Actions "
-                                            "and choose \u201cCustom fields of this box\u201d.",
-                                   "color": MUTED, "lines": 0}]))
-        self.show(sections)
-
-    def _rows(self, names):
-        rows = [{"title": n, "on_tap": functools.partial(self.on_field, n), "accessory": "none"}
-                for n in names]
-        rows.append({"title": "Add a field", "color": ACCENT, "on_tap": self.on_add_row, "accessory": "none"})
-        return rows
+        counts = store.type_counts()
+        bundled, own = [], []
+        for item_type in store.list_types():
+            row = {"title": item_type["name"],
+                   "subtitle": "%d field(s)  \u00b7  %d item(s)" % (len(item_type["fields"]),
+                                                                  counts.get(item_type["id"], 0)),
+                   "on_tap": functools.partial(self.app.push_type, item_type["id"])}
+            (bundled if item_type.get("bundled") else own).append(row)
+        own.append({"title": "Create a type", "color": ACCENT, "on_tap": self.on_add_row, "accessory": "none"})
+        self.show([("Your types", own), ("Come with the app (copy one to change it)", bundled)])
 
     def on_add_row(self):
         self.on_add(None)
 
     @task
     def on_add(self, sender):
-        name = ask_text("New field", "Name of the field, e.g. Warranty, Color, Size")
-        self.app.store.add_custom_field(name, self.box_id)
+        self.app.create_type()
+
+
+class TypeScreen(TableScreen):
+    """The fields of one type. Types that come with the app are read-only."""
+
+    def __init__(self, app, type_id):
+        TableScreen.__init__(self, app, "Type")
+        self.type_id = type_id
+        self.buttons(("Actions", self.on_actions))
+        self.refresh()
+
+    def refresh(self):
+        store = self.app.store
+        if not store.type_exists(self.type_id):
+            self.gone = True
+            self.show([("", [{"title": "This type was deleted.", "color": MUTED}])])
+            return
+        item_type = store.get_type(self.type_id)
+        self.name = item_type["name"]
+        bundled = item_type.get("bundled")
+        kinds = {"line": "one line", "text": "several lines", "links": "web links",
+                 "price": "price in \u20ac", "year": "year"}
+        rows = [{"title": "Name", "subtitle": "always there", "color": MUTED}]
+        for key, label, kind in item_type["fields"]:
+            row = {"title": label, "subtitle": kinds.get(kind, kind)
+                   + ("" if key.startswith(EXTRA_PREFIX) else "  \u00b7  standard field")}
+            if bundled:
+                row["color"] = MUTED
+            else:
+                row["on_tap"] = functools.partial(self.on_field, key, label)
+                row["accessory"] = "none"
+            rows.append(row)
+        rows.append({"title": "Photos", "subtitle": "always there", "color": MUTED})
+        if not bundled:
+            rows.append({"title": "Add a field", "color": ACCENT, "on_tap": self.on_add_field, "accessory": "none"})
+        count = store.type_counts().get(self.type_id, 0)
+        note = "Comes with the app and cannot be changed: use Actions > Make a copy." if bundled else \
+            "Tap a field to move, rename or remove it."
+        self.show([("%s  \u00b7  %d item(s)" % (item_type["name"], count), rows),
+                   ("", [{"title": note, "color": MUTED, "lines": 0}])])
+
+    @task
+    def on_actions(self, sender):
+        if self.gone:
+            return
+        store = self.app.store
+        item_type = store.get_type(self.type_id)
+        if item_type.get("bundled"):
+            if choose(item_type["name"], ["Make a copy to change it"]) == 0:
+                self.app.create_type(based_on=self.type_id)
+            return
+        index = choose(item_type["name"], ["Rename type", "Make a copy", "Delete type"])
+        if index == 0:
+            store.rename_type(self.type_id, ask_text("Rename type", "", item_type["name"]))
+            self.app.refresh_all()
+        elif index == 1:
+            self.app.create_type(based_on=self.type_id)
+        elif index == 2:
+            count = store.type_counts().get(self.type_id, 0)
+            if count:
+                info("Type in use", "%d item(s) have this type. Give them another type first "
+                     "(edit the item and tap Type)." % count)
+            elif confirm("Delete the type '%s'?" % item_type["name"], "No item uses it.", "Delete"):
+                store.delete_type(self.type_id)
+                self.app.refresh_all()
+                self.app.pop()
+
+    def on_add_field(self):
+        self._add_field()
+
+    @task
+    def _add_field(self):
+        store = self.app.store
+        item_type = store.get_type(self.type_id)
+        have = set(key for key, _label, _kind in item_type["fields"])
+        free = [key for key in STANDARD_KEYS if key not in have]
+        options = ["A new field of my own..."] + ["%s (standard)" % FIELD_LABELS[key] for key in free]
+        index = choose("Add a field", options)
+        if index is None:
+            return
+        if index == 0:
+            name = ask_text("New field", "Name of the field, e.g. Warranty, Color, Size")
+            kind = choose("Kind of field", ["One line", "Several lines"])
+            if kind is None:
+                return
+            store.add_type_field(self.type_id, name, "line" if kind == 0 else "text")
+        else:
+            store.add_type_field(self.type_id, free[index - 1])
         self.app.refresh_all()
         hud("Field added")
 
     @task
-    def on_field(self, name):
+    def on_field(self, key, label):
         store = self.app.store
-        index = choose(name, ["Rename", "Remove"])
-        if index == 0:
-            new = ask_text("Rename field", "The values in the items are kept.", name)
-            store.rename_custom_field(name, new, self.box_id)
-            self.app.refresh_all()
-        elif index == 1:
-            count = store.field_value_count(name, self.box_id)
+        own = key.startswith(EXTRA_PREFIX)
+        options = ["Move up", "Move down", "Remove"]
+        if own:
+            options += ["Rename", "Make it one line / several lines"]
+        index = choose(label, options)
+        if index in (0, 1):
+            store.move_type_field(self.type_id, key, -1 if index == 0 else 1)
+        elif index == 2:
+            count = store.type_field_value_count(self.type_id, key)
             message = "Its value will be deleted from %d item(s)." % count if count else \
                 "No item has a value for it."
-            if confirm("Remove the field '%s'?" % name, message, "Remove"):
-                store.remove_custom_field(name, self.box_id)
-                self.app.refresh_all()
+            if not confirm("Remove the field '%s'?" % label, message, "Remove"):
+                return
+            store.remove_type_field(self.type_id, key)
+        elif index == 3:
+            store.rename_type_field(self.type_id, key, ask_text("Rename field", "The values in the items are kept.",
+                                                                  label))
+        elif index == 4:
+            kind = dict((k, kd) for k, _l, kd in store.get_type(self.type_id)["fields"]).get(key)
+            store.set_type_field_kind(self.type_id, key, "text" if kind == "line" else "line")
+        else:
+            return
+        self.app.refresh_all()
 
 
 class HelpScreen(TableScreen):
@@ -990,6 +1101,37 @@ class TouchApp(object):
         counts = self.store.box_counts()
         index = choose(title, ["%s  (%d)" % (b["label"], counts.get(b["id"], 0)) for b in boxes])
         return None if index is None else boxes[index]
+
+    def pick_type(self, title="Type of the item"):
+        """Ask for an item type (Generic first, then by name)."""
+        types = self.store.list_types()
+        index = choose(title, [t["name"] for t in types])
+        return None if index is None else types[index]
+
+    def new_item_in(self, box_id):
+        """Ask the type, then open the editor for a new item (call from a task)."""
+        item_type = self.pick_type("What kind of item?")
+        if item_type:
+            self.push(ItemEditor(self, box_id=box_id, type_id=item_type["id"]))
+
+    def push_type(self, type_id):
+        self.push(TypeScreen(self, type_id))
+
+    def create_type(self, based_on=None):
+        """Ask the name (and what to start from) of a new type (call from a task)."""
+        store = self.store
+        if based_on is None:
+            types = store.list_types()
+            index = choose("Start the new type from", ["Only a name and photos"] +
+                           ["A copy of %s" % t["name"] for t in types])
+            if index is None:
+                return
+            based_on = types[index - 1]["id"] if index else None
+        suggestion = "My " + store.get_type(based_on)["name"] if based_on else ""
+        name = ask_text("New item type", "Name of the type, e.g. Board game, Tool, Watch", suggestion)
+        new = store.create_type(name, based_on=based_on)
+        self.refresh_all()
+        self.push_type(new["id"])
 
     def pick_item(self, title="Choose an item", items=None):
         items = self.store.list_items() if items is None else items
@@ -1130,7 +1272,7 @@ class TouchApp(object):
     def _create_item(self):
         box = self.pick_box("Create the item in which box?")
         if box:
-            self.push(ItemEditor(self, box_id=box["id"]))
+            self.new_item_in(box["id"])
 
     @task
     def on_import_item(self):
@@ -1155,7 +1297,12 @@ class TouchApp(object):
             box = self.pick_box("Import the item into which box?")
         if not box:
             return
-        item, warnings = import_item_file(self.store, path, box["id"])
+        item_type = suggested_type(self.store, path)
+        if item_type is None:
+            item_type = self.pick_type("The file names no known type. Import it as which type?")
+            if not item_type:
+                return
+        item, warnings = import_item_file(self.store, path, box["id"], item_type["id"])
         self.refresh_all()
         self.open_item(item["id"])
         if warnings:
@@ -1216,7 +1363,7 @@ class TouchApp(object):
         store = self.store
         box = store.get_box(box_id)
         actions = ["Add Stuff to Box (move an item here)", "Create item here", "Edit box",
-                   "Export to PDF", "Export to Markdown", "Custom fields of this box", "Delete box"]
+                   "Export to PDF", "Export to Markdown", "Delete box"]
         index = choose(box["label"], actions)
         if index == 0:
             others = [i for i in store.list_items() if i.get("box") != box_id]
@@ -1225,7 +1372,7 @@ class TouchApp(object):
                 store.move_item(item["id"], box_id)
                 self.refresh_all()
         elif index == 1:
-            self.push(ItemEditor(self, box_id=box_id))
+            self.new_item_in(box_id)
         elif index == 2:
             data = dialogs.form_dialog("Edit Box", [
                 {"type": "text", "key": "label", "title": "Label", "value": box["label"]},
@@ -1240,8 +1387,6 @@ class TouchApp(object):
         elif index == 4:
             self.show_file(export.export_box_markdown(store, box_id))
         elif index == 5:
-            self.push(CustomFieldsScreen(self, box_id))
-        elif index == 6:
             count = len(store.box_items(box_id))
             if count:
                 info("Cannot delete '%s'" % box["label"],
