@@ -1,0 +1,38 @@
+YetAnotherStuffApp for Windows - quick setup
+============================================
+
+1. Install Python 3 (once)
+   - Microsoft Store: search "Python 3.12" (or newer) and click Get, or
+   - https://www.python.org/downloads/windows/ : run the installer and tick
+     "Add python.exe to PATH" on the first screen.
+   Nothing else is needed (the app uses only the Python standard library).
+
+2. Unzip the app
+   Right-click the zip > Extract All... and choose a folder you own, e.g.
+   Documents\YetAnotherStuffApp (not "Program Files": the app keeps its
+   data next to itself unless you choose another data folder).
+
+3. Start it
+   Double-click "Start Stuff App.bat".
+   (Or open a terminal in the folder and type:  py main.py)
+   If Windows SmartScreen asks, click "More info" > "Run anyway".
+   Tip: right-click the .bat > Send to > Desktop (create shortcut).
+
+4. Use it
+   The app opens text menus: type the number of a choice and press Enter
+   (0 = back). Start with Help, or Create Box, then Create Item.
+   - Your data is in the StuffData folder next to the app. To keep it in
+     OneDrive / Dropbox (e.g. shared with Pythonista on an iPhone), use
+     main menu > Settings: data folder, or start with:
+         py main.py --data "%USERPROFILE%\OneDrive\StuffData"
+   - Exports (PDF / Markdown) open with your default viewer.
+   - To import an item text file or photos, put them in the app folder
+     (they are listed) or type their full path.
+   - Optional: "py -m pip install pillow" lets the app import PNG photos
+     (without it, JPEG photos only).
+
+5. Update
+   Unzip the new version over the old folder (or into a new folder and
+   move StuffData and stuffapp_settings.json into it). Your data is never
+   inside the stuffapp folder. The app makes automatic backups (Backups
+   in the main menu).
