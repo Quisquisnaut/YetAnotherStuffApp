@@ -1,9 +1,10 @@
 """Import items from text files.
 
 A text item file is a list of ``Key: value`` lines. Keys are case
-insensitive; only ``Name`` is required. Lines that do not start with a
-known key continue the previous field, so descriptions and notes can span
-several lines::
+insensitive; only ``Name`` is required. Plain lines continue the previous
+field, so descriptions, issues and notes can span several lines (after a
+one-line detail such as the serial number they go to the notes). A
+``Key: value`` line with an unknown key is kept in the notes::
 
     Name: Cordless drill
     Box: Garage tools
@@ -157,6 +158,12 @@ def parse_item_text(text, custom_names=()):
             current = None
             continue
         if current is None:
+            continue
+        if match and current != "notes":
+            # An unknown "Key: value" line (e.g. a field that does not exist
+            # here) is kept in the notes rather than mixed into a detail.
+            current = "notes"
+            fields["notes"] = (fields.get("notes", "") + "\n" + line.strip()).strip()
             continue
         if current in ("links", "images"):
             fields[current].extend(_split_values(line))

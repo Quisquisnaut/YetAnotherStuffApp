@@ -199,7 +199,7 @@ class ImportExportFieldTests(TempStoreTestCase):
         text = ("Name: Drill\nSKU: DR-18V\nS/N: 123\nManufacturer: Drill Works\nBrand: Acme\n"
                 "Shop: Hardware store\nMade in: Germany\nYear acquired: 2021\n"
                 "Known issues: loose chuck\n  and weak battery\nwarranty: 2 years\nVoltage: 18 V\n"
-                "Unknown key: kept in notes?\n")
+                "Unknown key: kept in notes\n")
         path = self.write_file("drill.txt", text)
         item, _warnings = import_item_file(self.store, path, box_id=self.box["id"])
         self.assertEqual(item["product_code"], "DR-18V")
@@ -212,11 +212,15 @@ class ImportExportFieldTests(TempStoreTestCase):
         self.assertEqual(item["issues"], "loose chuck\nand weak battery")
         self.assertEqual(item["custom"]["Voltage"], "18 V")
         self.assertEqual(dict((k.lower(), v) for k, v in item["custom"].items())["warranty"], "2 years")
+        self.assertEqual(item["notes"], "Unknown key: kept in notes")
 
     def test_parse_without_custom_names(self):
-        fields = parse_item_text("Name: Drill\nSerial number: 9\nColour: red\n")
+        fields = parse_item_text("Name: Drill\nSerial number: 9\nColour: red\nIssues: dent\n"
+                                 "Size: XL\nsecond line\n")
         self.assertEqual(fields["serial_number"], "9")
-        self.assertNotIn("Colour", fields.get("custom") or {})
+        self.assertEqual(fields["issues"], "dent")
+        self.assertEqual(fields["notes"], "Colour: red\nSize: XL\nsecond line")
+        self.assertNotIn("custom", fields)
 
     def test_invalid_year_rejected_on_import(self):
         path = self.write_file("drill.txt", "Name: Drill\nYear: soon\n")

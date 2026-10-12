@@ -8,6 +8,15 @@ Location: Shelf 2
 Links: https://example.com/drill, https://example.com/manual
 Price: 89.90
 Origin: Hardware store
+Product code: DR-18V
+Serial number: SN 0012345
+Maker: Drill Works Ltd
+Brand: Acme
+Seller: Hardware store
+Made in: Germany
+Year of acquisition: 2023
+Issues: The chuck is a bit loose.
+Warranty: 2 years
 Images: drill.jpg, drill-case.jpg
 Notes:
 Warranty until 2027.
@@ -38,10 +47,14 @@ anything you like.
 
     ("Items", """\
 An item has a name and, optionally: description, location, web links,
-paid price (Euro), origin (where it came from), a JPEG photo gallery and
+paid price (Euro), origin (where it came from), product code, serial
+number, maker, brand, seller, made in (country), year of acquisition,
+issues (known problems), your own custom fields, a JPEG photo gallery and
 notes.
 
-- Create Item: choose the box first, then fill in the fields.
+- Create Item: choose the box first, then fill in the fields. In the text
+  menus the less common details (product code ... issues and custom
+  fields) are in a second form: answer "y" to "More details?".
 - Edit Item: change any field. In the touch interface empty a field to
   clear it; in the text menus press Enter to keep a value or type "-" to
   clear it.
@@ -50,7 +63,28 @@ notes.
 - Add Stuff to Box / Move: puts an item into another box.
 - Delete Item: asks for confirmation, then moves it to the Trash.
 
-Prices accept "12.50", "12,50", "1.299,00 EUR" or "1,299.00"."""),
+Prices accept "12.50", "12,50", "1.299,00 EUR" or "1,299.00".
+The year of acquisition is a 4-digit year such as 2023."""),
+
+    ("Custom fields", """\
+Custom fields are your own item details, for example "Warranty", "Color"
+or "Size". Each one is a single line of text.
+
+- For all items: Home > Custom fields (text menus: main menu > Custom
+  fields). Every item gets the field.
+- For one box only: open the box > Actions > Custom fields of this box
+  (text menus: box menu > Custom fields of this box). Only the items in
+  that box get it, e.g. "Voltage" for a box of power tools.
+
+Fill them in when you create or edit an item; leave one empty if it does
+not apply. Field names must start with a letter, can be up to 40
+characters and cannot repeat a standard detail (Name, Price, Brand...).
+
+- Rename: the values in the items are kept.
+- Remove: asks for confirmation and tells you how many items have a value
+  for it; those values are deleted (a backup can bring them back).
+- Moving an item to another box keeps its values; values of fields that do
+  not belong to the new box are still shown, so nothing is hidden."""),
 
     ("Photos", """\
 Photos must be JPEG (.jpg / .jpeg). With the Pillow library installed
@@ -64,9 +98,15 @@ converted automatically.
 
     ("Import an item from a text file", """\
 Import Item reads a .txt, .md or .json file. Write one "Key: value" per line;
-long values may continue on the following lines. Only Name is required.
-Known keys: Name, Box, Description, Location, Links, Price, Origin, Images,
-Notes. Images are file names relative to the text file.
+long descriptions, issues and notes may continue on the following lines
+(an extra line after a one-line detail such as Serial number is added to
+the notes, and so is a line with an unknown key such as "Color: red").
+Only Name is required.
+Known keys: Name, Box, Description, Location, Links, Price, Origin,
+Product code, Serial number, Maker, Brand, Seller, Made in, Year of
+acquisition, Issues, Images, Notes, plus the names of your custom fields.
+Some other spellings work too (SKU, S/N, Manufacturer, Shop, Year...).
+Images are file names relative to the text file.
 
 If the file names a Box that exists, you are offered that box; otherwise you
 choose one. A Markdown file exported by this app can be imported back.
@@ -76,11 +116,12 @@ Example:
 """ + ITEM_FILE_EXAMPLE),
 
     ("Search, filter and export", """\
-Search finds items whose name, description, location, origin, notes, links
-or box contain all the words you type.
+Search finds items whose details (name, description, serial number, brand,
+issues, custom fields...), links or box contain all the words you type.
 
 Filters: box, location, origin, minimum / maximum price, only items with
-photos. Sort by name, price (highest first), newest or box.
+photos. Sort by name, price (highest first), newest, box or year of acquisition
+(newest first).
 
 Export all writes every item (grouped by box) to one PDF or Markdown file.
 The search results can be exported the same way. Exported files are saved
@@ -104,7 +145,8 @@ time."""),
 
     ("Data folder and iCloud", """\
 All data lives in plain files in the data folder (by default "StuffData"
-next to main.py): boxes/, items/, images/, trash/, backups/ and exports/.
+next to main.py): boxes/, items/, images/, meta/ (the custom fields of all
+items), trash/, backups/ and exports/.
 
 Settings > data folder lets you move it, for example into iCloud Drive
 (on iPhone with Pythonista) or a synced folder (OneDrive, Dropbox...) on a
