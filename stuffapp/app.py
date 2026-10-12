@@ -13,16 +13,24 @@ from .ui import Cancelled
 
 TRASH_DAYS = 30
 
+# Details asked after "More details?" (the main ones are always asked).
+MORE_DETAILS = (
+    ("product_code", "Product code"),
+    ("serial_number", "Serial number"),
+    ("maker", "Maker"),
+    ("brand", "Brand"),
+    ("seller", "Seller"),
+    ("made_in", "Made in"),
+    ("year_acquired", "Year of acquisition (e.g. 2023)"),
+    ("issues", "Issues"),
+)
+
 
 def item_summary(store, item):
     box = store.box_of_item(item["id"])
     lines = [item["name"], "ID: %s" % item["id"], "Box: %s" % (box["label"] if box else "?")]
-    for label, key in (("Description", "description"), ("Location", "location"),
-                       ("Origin", "origin"), ("Notes", "notes")):
-        if item.get(key):
-            lines.append("%s: %s" % (label, item[key]))
-    if item.get("price") is not None:
-        lines.append("Paid price: %s" % export.format_price(item["price"]))
+    for label, value in export.detail_rows(store, item):
+        lines.append("%s: %s" % (label, value))
     if item.get("links"):
         lines.append("Links: %s" % ", ".join(item["links"]))
     lines.append("Images: %d" % len(item.get("images", [])))
@@ -74,6 +82,7 @@ class App(object):
             ("Export all", self.export_all),
             ("Trash (recently deleted)", self.trash_menu),
             ("Backups", self.backups_menu),
+            ("Custom fields", self.custom_fields_menu),
             ("Settings: data folder", self.settings),
             ("Help", self.help_menu),
         ]
@@ -128,7 +137,9 @@ class App(object):
         index = self.ui.choose(title, labels)
         return None if index is None else items[index]
 
-    def _item_form(self, title, item=None):
+    def _item_form(self, title, item=None, box_id=None):
+        """Ask for the item details: the main ones, then (if wanted) the
+        other details and the custom fields of the box."""
         item = item or {}
         fields = [
             ("name", "Name", item.get("name", "")),
@@ -139,7 +150,21 @@ class App(object):
             ("origin", "Origin (where it came from)", item.get("origin", "")),
             ("notes", "Notes", item.get("notes", "")),
         ]
-        return self.ui.form(title, fields)
+        data = self.ui.form(title, fields)
+        custom = self.store.item_custom_fields(dict(item, box=box_id or item.get("box")))
+        names = ", ".join(n for n, _v in custom)
+        if not self.ui.confirm("More details (product code, serial number, maker, brand, seller, made in, "
+                               "year of acquisition, issues%s)?" % (", " + names if names else "")):
+            return data
+        more = [(key, label, item.get(key) or "") for key, label in MORE_DETAILS]
+        more = [(k, l, str(v)) for k, l, v in more]
+        more += [("custom:" + n, n, v) for n, v in custom]
+        for key, value in self.ui.form("More details", more).items():
+            if key.startswith("custom:"):
+                data.setdefault("custom", {})[key[len("custom:"):]] = value
+            else:
+                data[key] = value
+        return data
 
     def _export(self, func, *args):
         self.ui.show_file(func(self.store, *args))
@@ -167,6 +192,7 @@ class App(object):
                 ("Edit box", self.edit_box),
                 ("Export to PDF", lambda b: self._export(export.export_box_pdf, b)),
                 ("Export to Markdown", lambda b: self._export(export.export_box_markdown, b)),
+                ("Custom fields of this box", self.custom_fields_menu),
                 ("Delete box", self.delete_box),
             ]
             title = "Box: %s (%d items, ID %s)" % (box["label"], len(items), box["id"])
@@ -215,7 +241,7 @@ class App(object):
             if not box:
                 return None
             box_id = box["id"]
-        data = self._item_form("Create Item")
+        data = self._item_form("Create Item", box_id=box_id)
         name = data.pop("name", "")
         item = self.store.create_item(name, box_id, **data)
         if self.ui.confirm("Add images to '%s'?" % item["name"]):
@@ -231,6 +257,7 @@ class App(object):
                 ("Edit item", self.edit_item),
                 ("Edit description (multi-line)", lambda i: self.edit_text(i, "description")),
                 ("Edit notes (multi-line)", lambda i: self.edit_text(i, "notes")),
+                ("Edit issues (multi-line)", lambda i: self.edit_text(i, "issues")),
                 ("Clone item (duplicate with a new ID)", self.clone_item),
                 ("Move to another box", self.item_move),
                 ("Import images", self.add_images),
@@ -260,6 +287,46 @@ class App(object):
             clone = self.clone_item(item["id"])
             if clone:
                 self.item_menu(clone["id"])
+
+    def custom_fields_menu(self, box_id=None):
+        """Add, rename or remove custom fields of all items (``box_id``
+        None) or of the items of one box."""
+        while True:
+            if box_id:
+                box = self.store.get_box(box_id)
+                names = self.store.box_fields(box_id)
+                general = self.store.general_fields()
+                title = "Custom fields of box '%s'" % box["label"]
+                if general:
+                    title += " (all items also have: %s)" % ", ".join(general)
+            else:
+                names = self.store.general_fields()
+                title = "Custom fields of all items (box fields: in each box's menu)"
+            index = self.ui.choose(title, ["Add a field"] + names)
+            if index is None:
+                return
+            if index == 0:
+                self._safe(self._add_field, box_id)
+            else:
+                self._safe(self._field_actions, names[index - 1], box_id)
+
+    def _add_field(self, box_id):
+        name = self.ui.form("Add a field", [("name", "Field name (e.g. Warranty, Color, Size)", "")])["name"]
+        name = self.store.add_custom_field(name, box_id)
+        self.ui.message("Field '%s' added." % name)
+
+    def _field_actions(self, name, box_id):
+        index = self.ui.choose("Field '%s'" % name, ["Rename", "Remove"])
+        if index == 0:
+            new = self.ui.form("Rename field", [("name", "New name", name)])["name"]
+            self.store.rename_custom_field(name, new, box_id)
+        elif index == 1:
+            count = self.store.field_value_count(name, box_id)
+            text = "Remove the field '%s'?" % name
+            if count:
+                text += " Its value will be deleted from %d item(s)." % count
+            if self.ui.confirm(text):
+                self.store.remove_custom_field(name, box_id)
 
     def edit_item(self, item_id):
         data = self._item_form("Edit Item", self.store.get_item(item_id))

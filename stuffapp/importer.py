@@ -12,6 +12,15 @@ several lines::
     Links: https://example.com/drill, https://example.com/manual
     Price: 89.90
     Origin: Hardware store, birthday 2023
+    Product code: DR-18
+    Serial number: SN123456
+    Maker: ACME Tools
+    Brand: Acme
+    Seller: Hardware store
+    Made in: Germany
+    Year of acquisition: 2023
+    Issues: battery holds less charge
+    Warranty: 2 years
     Images: drill.jpg, drill_box.jpg
     Notes:
     Warranty until 2026.
@@ -19,6 +28,9 @@ several lines::
 
 ``Box`` is optional: when it names an existing box, the item goes there;
 otherwise the app asks which box to use (every item is in a box).
+Lines starting with the name of a custom field (of all items or of any
+box) fill that field, e.g. ``Warranty`` above. Indented lines always
+continue the previous field.
 ``Images`` paths are relative to the text file. The Markdown files written
 by "Export item to Markdown" use the same keys and can be imported again.
 A ``.json`` file with the same field names is accepted too.
@@ -29,7 +41,7 @@ import os
 import re
 
 from .images import import_image_file
-from .storage import StorageError
+from .storage import TEXT_FIELDS, StorageError
 
 KEY_ALIASES = {
     "name": "name",
@@ -58,13 +70,41 @@ KEY_ALIASES = {
     "image gallery": "images",
     "box": "box",
     "paid price (€)": "price",
+    "product code": "product_code",
+    "sku": "product_code",
+    "model number": "product_code",
+    "part number": "product_code",
+    "serial number": "serial_number",
+    "serial": "serial_number",
+    "serial no": "serial_number",
+    "s/n": "serial_number",
+    "maker": "maker",
+    "manufacturer": "maker",
+    "brand": "brand",
+    "seller": "seller",
+    "shop": "seller",
+    "vendor": "seller",
+    "sold by": "seller",
+    "made in": "made_in",
+    "country of manufacture": "made_in",
+    "year of acquisition": "year_acquired",
+    "year acquired": "year_acquired",
+    "year": "year_acquired",
+    "issues": "issues",
+    "issue": "issues",
+    "problems": "issues",
+    "defects": "issues",
+    "known issues": "issues",
 }
+
+# Single-value keys (everything except links and images).
+_TEXT_KEYS = ("name", "box", "price", "year_acquired") + TEXT_FIELDS
 
 # Keys written by the exporter that are not item fields.
 IGNORED_KEYS = {"id", "created", "modified"}
 
 # "Key: value", "- **Key:** value", "**Key**: value" ...
-_FIELD_RE = re.compile(r"^\s*(?:[-*+]\s+)?\**\s*([A-Za-z][A-Za-z ()\u20ac]*?)\s*(?::\**|\**\s*:)\s*(.*)$")
+_FIELD_RE = re.compile(r"^\s*(?:[-*+]\s+)?\**\s*([^\W\d_][\w ()\u20ac/.'-]*?)\s*(?::\**|\**\s*:)\s*(.*)$")
 _HEADING_RE = re.compile(r"^\s*#\s+(.+?)\s*$")
 _MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)\)")
 
@@ -80,14 +120,24 @@ def _split_values(text):
     return found
 
 
-def parse_item_text(text):
-    """Parse item text into a dict of raw field values."""
+def parse_item_text(text, custom_names=()):
+    """Parse item text into a dict of raw field values.
+
+    ``custom_names`` are the user's own field names: lines starting with
+    one of them go to ``fields["custom"]`` (``{name: value}``).
+    """
+    custom = dict((name.lower(), "custom:" + name) for name in custom_names)
     fields = {}
     current = None
     for raw_line in text.splitlines():
         line = raw_line.rstrip()
-        match = _FIELD_RE.match(line)
-        key = KEY_ALIASES.get(match.group(1).strip().lower()) if match else None
+        # Indented lines continue the current field (multi-line values in
+        # exported Markdown), even if they look like "Key: value".
+        match = None if (current is not None and line[:1].isspace()) else _FIELD_RE.match(line)
+        key = None
+        if match:
+            raw_key = match.group(1).strip().lower()
+            key = KEY_ALIASES.get(raw_key) or custom.get(raw_key)
         if match and not key and match.group(1).strip().lower() in IGNORED_KEYS:
             current = None
             continue
@@ -115,9 +165,16 @@ def parse_item_text(text):
                 current = None
         else:
             fields[current] = (fields[current] + "\n" + line.strip()) if fields[current] else line.strip()
-    for key in ("description", "location", "origin", "notes", "name", "price", "box"):
-        if key in fields:
+    for key in list(fields):
+        if key in _TEXT_KEYS or key.startswith("custom:"):
             fields[key] = fields[key].strip()
+    values = {}
+    for key in [k for k in fields if k.startswith("custom:")]:
+        value = fields.pop(key)
+        if value:
+            values[key[len("custom:"):]] = value
+    if values:
+        fields["custom"] = values
     if not fields.get("name"):
         raise StorageError("The file has no item name (add a 'Name:' line).")
     return fields
@@ -126,7 +183,7 @@ def parse_item_text(text):
 MAX_ITEM_FILE_BYTES = 1024 * 1024
 
 
-def parse_item_file(path):
+def parse_item_file(path, custom_names=()):
     if os.path.getsize(path) > MAX_ITEM_FILE_BYTES:
         raise StorageError("The file is too large for an item (max 1 MB).")
     try:
@@ -142,7 +199,7 @@ def parse_item_file(path):
         if not isinstance(data, dict) or not data.get("name"):
             raise StorageError("The JSON file has no item name.")
         return data
-    return parse_item_text(text)
+    return parse_item_text(text, custom_names)
 
 
 def suggested_box(store, path):
@@ -163,7 +220,7 @@ def import_item_file(store, path, box_id=None):
     Returns ``(item, warnings)``; warnings list images that could not be
     imported.
     """
-    fields = parse_item_file(path)
+    fields = parse_item_file(path, store.all_field_names())
     if not box_id:
         box = suggested_box(store, path)
         if box is None:
@@ -173,7 +230,7 @@ def import_item_file(store, path, box_id=None):
     if isinstance(images, str):
         images = _split_values(images)
     data = dict((k, v) for k, v in fields.items() if k in
-                ("description", "location", "links", "price", "origin", "notes"))
+                ("links", "price", "year_acquired", "custom") + TEXT_FIELDS)
     item = store.create_item(fields["name"], box_id, **data)
     warnings = []
     base_dir = os.path.dirname(os.path.abspath(path))

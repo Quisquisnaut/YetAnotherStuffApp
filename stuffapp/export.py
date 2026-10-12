@@ -11,6 +11,7 @@ import shutil
 from datetime import datetime
 
 from .pdf import PDFDocument
+from .storage import ITEM_FIELD_SPECS
 
 
 def slugify(text, fallback="export"):
@@ -26,6 +27,29 @@ def format_price(price):
     if price is None or price == "":
         return ""
     return "%s%s" % (CURRENCY, "{:,.2f}".format(float(price)))
+
+
+def detail_rows(store, item):
+    """``[(label, text)]`` of the filled-in details of an item, in display
+    order: standard details, then custom fields, then notes. Name, box and
+    links are not included."""
+    rows = []
+    for key, label, kind in ITEM_FIELD_SPECS:
+        if key in ("name", "links", "notes"):
+            continue
+        value = item.get(key)
+        if kind == "price":
+            value = format_price(value)
+        elif value is not None:
+            value = str(value)
+        if value:
+            rows.append((label, value))
+    for name, value in store.item_custom_fields(item):
+        if value:
+            rows.append((name, value))
+    if item.get("notes"):
+        rows.append(("Notes", item["notes"]))
+    return rows
 
 
 def _export_base(store, name, obj_id):
@@ -58,15 +82,8 @@ def item_markdown(store, item, level=1, image_dir=None, md_dir=None):
     relative to ``md_dir``.
     """
     lines = ["%s %s" % ("#" * level, item["name"]), ""]
-    simple = (
-        ("Description", item.get("description")),
-        ("Location", item.get("location")),
-        ("Paid price", format_price(item.get("price"))),
-        ("Origin", item.get("origin")),
-    )
-    for label, value in simple:
-        if value:
-            _md_field(lines, label, value)
+    for label, value in detail_rows(store, item):
+        _md_field(lines, label, value)
     box = store.box_of_item(item["id"])
     if box and level == 1:
         lines.append("- **Box:** %s" % box["label"])
@@ -74,8 +91,6 @@ def item_markdown(store, item, level=1, image_dir=None, md_dir=None):
         lines.append("- **Links:**")
         for link in item["links"]:
             lines.append("  - <%s>" % link)
-    if item.get("notes"):
-        _md_field(lines, "Notes", item["notes"])
     lines.append("- **ID:** %s" % item["id"])
     if item.get("images") and image_dir:
         if not os.path.isdir(image_dir):
@@ -135,16 +150,13 @@ def export_box_markdown(store, box_id, path=None):
 # ----------------------------------------------------------------------- pdf
 def _item_pdf(store, doc, item, heading_size=18, show_box=True, images=True):
     doc.heading(item["name"], size=heading_size)
-    doc.field("Description", item.get("description"))
-    doc.field("Location", item.get("location"))
-    doc.field("Paid price", format_price(item.get("price")))
-    doc.field("Origin", item.get("origin"))
+    for label, value in detail_rows(store, item):
+        doc.field(label, value)
     if show_box:
         box = store.box_of_item(item["id"])
         doc.field("Box", box["label"] if box else "")
     if item.get("links"):
         doc.field("Links", "\n".join(item["links"]))
-    doc.field("Notes", item.get("notes"))
     doc.text("ID: %s" % item["id"], size=8)
     for path in store.image_paths(item) if images else []:
         if not os.path.isfile(path):

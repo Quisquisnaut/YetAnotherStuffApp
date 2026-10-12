@@ -26,7 +26,7 @@ from . import __version__, backup, config, export, guide
 from .app import TRASH_DAYS, describe_filters, startup
 from .images import pil_to_jpeg_bytes, to_jpeg_bytes
 from .importer import import_item_file, suggested_box
-from .storage import SORT_KEYS, Store, StorageError, is_safe_link
+from .storage import ITEM_FIELD_SPECS, SORT_KEYS, Store, StorageError, is_safe_link
 from .ui import IMAGE_FILE_EXTS, TEXT_FILE_EXTS, find_files
 
 try:
@@ -290,6 +290,8 @@ class HomeScreen(TableScreen):
                 {"title": "Trash", "subtitle": "%d recently deleted" % len(store.list_trash()),
                  "on_tap": lambda: self.app.push(TrashScreen(self.app))},
                 {"title": "Backups", "on_tap": lambda: self.app.push(BackupsScreen(self.app))},
+                {"title": "Custom fields", "subtitle": "Your own item details, for all items or one box",
+                 "on_tap": lambda: self.app.push(CustomFieldsScreen(self.app))},
                 {"title": "Settings", "subtitle": "Data location",
                  "on_tap": lambda: self.app.push(SettingsScreen(self.app))},
                 {"title": "Help", "subtitle": "How to use the app",
@@ -391,13 +393,9 @@ class ItemScreen(Screen):
                                  lambda s: box and self.app.open_box(box["id"]))
         self.scroll.add_subview(box_button)
         y += 38
-        fields = (("Description", item.get("description")), ("Location", item.get("location")),
-                  ("Paid price", export.format_price(item.get("price"))),
-                  ("Origin", item.get("origin")), ("Notes", item.get("notes")))
-        for label, value in fields:
-            if value:
-                y = self._label(label.upper(), y, ("<system>", 12), MUTED)
-                y = self._label(value, y, ("<system>", 17), TEXT) + 10
+        for label, value in export.detail_rows(store, item):
+            y = self._label(label.upper(), y, ("<system>", 12), MUTED)
+            y = self._label(value, y, ("<system>", 17), TEXT) + 10
         if item.get("links"):
             y = self._label("WEB LINKS", y, ("<system>", 12), MUTED)
             for link in item["links"]:
@@ -448,20 +446,18 @@ class ItemScreen(Screen):
 class ItemEditor(Screen):
     """Create (``box_id``) or edit (``item_id``) an item."""
 
-    FIELDS = (
-        ("name", "Name", "line"),
-        ("description", "Description", "text"),
-        ("location", "Location", "line"),
-        ("links", "Web links (one per line)", "text"),
-        ("price", "Paid price (\u20ac)", "price"),
-        ("origin", "Origin (where it came from)", "line"),
-        ("notes", "Notes", "text"),
-    )
+    LABELS = {
+        "links": "Web links (one per line)",
+        "price": "Paid price (\u20ac)",
+        "origin": "Origin (where it came from)",
+        "year_acquired": "Year of acquisition",
+    }
 
     def __init__(self, app, item_id=None, box_id=None):
         Screen.__init__(self, app, "Edit Item" if item_id else "New Item")
         self.item_id = item_id
         item = app.store.get_item(item_id) if item_id else {}
+        self.item_custom = dict(item.get("custom") or {})
         self.box_id = item.get("box") or box_id
         self.scroll = ui.ScrollView(frame=self.bounds, flex="WH")
         self.scroll.background_color = BG
@@ -469,30 +465,56 @@ class ItemEditor(Screen):
         self.box_button = link_button("", (PAD, PAD, 300, 34), self.on_pick_box)
         self.scroll.add_subview(self.box_button)
         self.widgets = []
-        for key, label, kind in self.FIELDS:
-            title = ui.Label(text=label.upper(), font=("<system>", 12), text_color=MUTED)
+        for key, label, kind in ITEM_FIELD_SPECS:
             value = item.get(key)
             if key == "links":
                 value = "\n".join(value or [])
-            elif key == "price":
+            elif kind == "price":
                 value = "%.2f" % value if value is not None else ""
-            if kind == "text":
-                field = ui.TextView(font=("<system>", 17), text=value or "")
-                field.corner_radius = 6
-            else:
-                field = ui.TextField(font=("<system>", 17), text=value or "")
-                field.clear_button_mode = "while_editing"
-                field.bordered = False
-                if kind == "price":
-                    field.keyboard_type = ui.KEYBOARD_DECIMAL_PAD
-                    field.placeholder = "e.g. 12.50"
-            field.background_color = FIELD_BG
-            field.text_color = TEXT
-            self.scroll.add_subview(title)
-            self.scroll.add_subview(field)
-            self.widgets.append((key, kind, title, field))
+            elif value is not None:
+                value = str(value)
+            self._add_widget(key, self.LABELS.get(key, label), "text" if kind == "links" else kind, value)
+        self.custom_header = ui.Label(text="CUSTOM FIELDS", font=("<system-bold>", 12), text_color=MUTED)
+        self.scroll.add_subview(self.custom_header)
+        self._build_custom()
         self.buttons(("Save", self.on_save))
         self._update_box_title()
+
+    def _add_widget(self, key, label, kind, value):
+        title = ui.Label(text=label.upper(), font=("<system>", 12), text_color=MUTED)
+        if kind == "text":
+            field = ui.TextView(font=("<system>", 17), text=value or "")
+            field.corner_radius = 6
+        else:
+            field = ui.TextField(font=("<system>", 17), text=value or "")
+            field.clear_button_mode = "while_editing"
+            field.bordered = False
+            if kind == "price":
+                field.keyboard_type = ui.KEYBOARD_DECIMAL_PAD
+                field.placeholder = "e.g. 12.50"
+            elif kind == "year":
+                field.keyboard_type = ui.KEYBOARD_NUMBER_PAD
+                field.placeholder = "e.g. 2023"
+        field.background_color = FIELD_BG
+        field.text_color = TEXT
+        self.scroll.add_subview(title)
+        self.scroll.add_subview(field)
+        self.widgets.append((key, kind, title, field))
+
+    def _build_custom(self):
+        """(Re)create the custom field inputs for the chosen box, keeping
+        what was typed. Values of fields of another box are kept too."""
+        for key, kind, title, field in [w for w in self.widgets if w[0].startswith("custom:")]:
+            self.item_custom[key[len("custom:"):]] = field.text
+            self.scroll.remove_subview(title)
+            self.scroll.remove_subview(field)
+            self.widgets.remove((key, kind, title, field))
+        fields = self.app.store.item_custom_fields({"box": self.box_id, "custom": self.item_custom})
+        for name, value in fields:
+            self._add_widget("custom:" + name, name, "line", value)
+        self.custom_header.text = "CUSTOM FIELDS" if fields else \
+            "NO CUSTOM FIELDS YET: ADD THEM ON THE HOME SCREEN (CUSTOM FIELDS) OR IN THE BOX (ACTIONS)"
+        self.layout()
 
     def _update_box_title(self):
         label = "choose..."
@@ -505,21 +527,36 @@ class ItemEditor(Screen):
         y = PAD
         self.box_button.frame = (PAD, y, width, 34)
         y += 44
+        header_done = False
         for key, kind, title, field in self.widgets:
+            if key.startswith("custom:") and not header_done:
+                y = self._layout_header(y, width)
+                header_done = True
             title.frame = (PAD, y, width, 18)
             y += 20
             height = 100 if kind == "text" else 36
             field.frame = (PAD, y, width, height)
             y += height + 14
+        if not header_done:
+            y = self._layout_header(y, width)
         self.scroll.content_size = (self.width, y + 300)
+
+    def _layout_header(self, y, width):
+        height = text_height(self.custom_header.text, width, ("<system-bold>", 12)) + 4
+        self.custom_header.number_of_lines = 0
+        self.custom_header.frame = (PAD, y + 6, width, height)
+        return y + height + 16
 
     def keyboard_frame_did_change(self, frame):
         self.scroll.content_inset = (0, 0, frame[3], 0)
 
     def values(self):
-        data = {}
+        data = {"custom": {}}
         for key, kind, title, field in self.widgets:
-            data[key] = field.text
+            if key.startswith("custom:"):
+                data["custom"][key[len("custom:"):]] = field.text
+            else:
+                data[key] = field.text
         return data
 
     @task
@@ -528,6 +565,11 @@ class ItemEditor(Screen):
         if box:
             self.box_id = box["id"]
             self._update_box_title()
+            self._rebuild_custom_on_main()
+
+    @ui.on_main_thread
+    def _rebuild_custom_on_main(self):
+        self._build_custom()
 
     @task
     def on_save(self, sender):
@@ -771,6 +813,65 @@ class BackupsScreen(TableScreen):
         elif index == 2 and confirm("Delete backup?", os.path.basename(path)):
             os.remove(path)
             self.app.refresh_all()
+
+
+class CustomFieldsScreen(TableScreen):
+    """The user's own item fields: for all items, or for one box."""
+
+    def __init__(self, app, box_id=None):
+        TableScreen.__init__(self, app, "Box fields" if box_id else "Custom fields")
+        self.box_id = box_id
+        self.buttons(("+", self.on_add))
+        self.refresh()
+
+    def refresh(self):
+        store = self.app.store
+        general = store.general_fields()
+        if self.box_id:
+            box = store.get_box(self.box_id)
+            names = store.box_fields(self.box_id)
+            sections = [("Only for items in '%s'" % box["label"], self._rows(names))]
+            sections.append(("For all items (edit on the home screen)",
+                             [{"title": n, "color": MUTED} for n in general] or
+                             [{"title": "None", "color": MUTED}]))
+        else:
+            sections = [("For all items", self._rows(general))]
+            sections.append(("", [{"title": "Fields for one box only: open the box, tap Actions "
+                                            "and choose \u201cCustom fields of this box\u201d.",
+                                   "color": MUTED, "lines": 0}]))
+        self.show(sections)
+
+    def _rows(self, names):
+        rows = [{"title": n, "on_tap": functools.partial(self.on_field, n), "accessory": "none"}
+                for n in names]
+        rows.append({"title": "Add a field", "color": ACCENT, "on_tap": self.on_add_row, "accessory": "none"})
+        return rows
+
+    def on_add_row(self):
+        self.on_add(None)
+
+    @task
+    def on_add(self, sender):
+        name = ask_text("New field", "Name of the field, e.g. Warranty, Color, Size")
+        self.app.store.add_custom_field(name, self.box_id)
+        self.app.refresh_all()
+        hud("Field added")
+
+    @task
+    def on_field(self, name):
+        store = self.app.store
+        index = choose(name, ["Rename", "Remove"])
+        if index == 0:
+            new = ask_text("Rename field", "The values in the items are kept.", name)
+            store.rename_custom_field(name, new, self.box_id)
+            self.app.refresh_all()
+        elif index == 1:
+            count = store.field_value_count(name, self.box_id)
+            message = "Its value will be deleted from %d item(s)." % count if count else \
+                "No item has a value for it."
+            if confirm("Remove the field '%s'?" % name, message, "Remove"):
+                store.remove_custom_field(name, self.box_id)
+                self.app.refresh_all()
 
 
 class HelpScreen(TableScreen):
@@ -1115,7 +1216,7 @@ class TouchApp(object):
         store = self.store
         box = store.get_box(box_id)
         actions = ["Add Stuff to Box (move an item here)", "Create item here", "Edit box",
-                   "Export to PDF", "Export to Markdown", "Delete box"]
+                   "Export to PDF", "Export to Markdown", "Custom fields of this box", "Delete box"]
         index = choose(box["label"], actions)
         if index == 0:
             others = [i for i in store.list_items() if i.get("box") != box_id]
@@ -1139,6 +1240,8 @@ class TouchApp(object):
         elif index == 4:
             self.show_file(export.export_box_markdown(store, box_id))
         elif index == 5:
+            self.push(CustomFieldsScreen(self, box_id))
+        elif index == 6:
             count = len(store.box_items(box_id))
             if count:
                 info("Cannot delete '%s'" % box["label"],

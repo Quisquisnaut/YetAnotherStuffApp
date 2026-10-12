@@ -5,6 +5,7 @@ Layout of the data directory::
     <root>/boxes/<box_id>.json
     <root>/items/<item_id>.json          (``"box"`` = id of its box)
     <root>/images/<item_id>/<image>.jpg
+    <root>/meta/fields.json              custom fields of all items
     <root>/exports/...
     <root>/trash/<stamp>_<kind>_<id>/   deleted boxes/items (restorable)
     <root>/backups/*.zip                full backups (see backup.py)
@@ -15,6 +16,11 @@ which is also its file name; names and labels do not need to be unique.
 Every item is always in exactly one box: the box id is stored in the item
 itself, an item is created inside a box and can only be moved to another
 box or deleted. A box can only be deleted when it is empty.
+
+Custom fields: the user can add own fields, either for all items
+(``meta/fields.json``) or for the items of one box (the box's ``fields``
+list). Item values are kept in ``item["custom"]`` as ``{name: text}``;
+when an item moves to another box its values are kept.
 
 Every JSON write keeps the previous version as ``<file>.json.bak``; if a
 file is found damaged when read, it is repaired from that copy.
@@ -27,20 +33,41 @@ import shutil
 import uuid
 from datetime import datetime
 
-ITEM_FIELDS = (
-    "name",
-    "description",
-    "location",
-    "links",
-    "price",
-    "origin",
-    "images",
-    "notes",
+# The item details, in display order: (key, label, kind). ``kind`` is
+# "line" (one line of text), "text" (several lines), "links", "price" or
+# "year". All are optional except the name. Every UI and export uses this
+# list, so a new detail only needs to be added here (and to the importer
+# aliases if it has other common names).
+ITEM_FIELD_SPECS = (
+    ("name", "Name", "line"),
+    ("description", "Description", "text"),
+    ("location", "Location", "line"),
+    ("links", "Web links", "links"),
+    ("price", "Paid price", "price"),
+    ("origin", "Origin", "line"),
+    ("product_code", "Product code", "line"),
+    ("serial_number", "Serial number", "line"),
+    ("maker", "Maker", "line"),
+    ("brand", "Brand", "line"),
+    ("seller", "Seller", "line"),
+    ("made_in", "Made in", "line"),
+    ("year_acquired", "Year of acquisition", "year"),
+    ("issues", "Issues", "text"),
+    ("notes", "Notes", "text"),
 )
+TEXT_FIELDS = tuple(key for key, _label, kind in ITEM_FIELD_SPECS if kind in ("line", "text") and key != "name")
+FIELD_LABELS = dict((key, label) for key, label, _kind in ITEM_FIELD_SPECS)
+
+# ``custom`` holds the values of the user's own fields: {field name: text}.
+ITEM_FIELDS = tuple(key for key, _label, _kind in ITEM_FIELD_SPECS) + ("images", "custom")
+
+MAX_FIELD_NAME = 40
+# Letters (any language), digits, spaces and a few signs; must start with a letter.
+_FIELD_NAME_RE = re.compile(r"^[^\W\d_][\w ()/.'-]*$")
 
 JPEG_MAGIC = b"\xff\xd8\xff"
 
-SORT_KEYS = ("name", "price", "newest", "box")
+SORT_KEYS = ("name", "price", "newest", "box", "year")
 
 # Box that receives items whose box is missing (old data, damaged files).
 UNSORTED_LABEL = "Unsorted"
@@ -72,6 +99,61 @@ def _clean_str(value):
     if value is None:
         return ""
     return str(value).strip()
+
+
+def parse_year(value):
+    """Year of acquisition: ``None`` or a whole year (1000 - next year)."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise StorageError("Invalid year: %r" % (value,))
+    text = str(value).strip().rstrip(".")
+    if isinstance(value, float) and value.is_integer():
+        text = str(int(value))
+    if not re.match(r"^[0-9]{4}$", text):
+        raise StorageError("Invalid year: %r (write it like 2023)" % (value,))
+    year = int(text)
+    if year < 1000 or year > datetime.now().year + 1:
+        raise StorageError("Invalid year: %r" % (value,))
+    return year
+
+
+def check_field_name(name):
+    """Return the cleaned name of a custom field or raise StorageError."""
+    from .importer import IGNORED_KEYS, KEY_ALIASES  # (importer imports this module)
+
+    name = _one_line(name)
+    if not name:
+        raise StorageError("A field needs a name.")
+    if len(name) > MAX_FIELD_NAME or not _FIELD_NAME_RE.match(name):
+        raise StorageError("Invalid field name %r: use up to %d letters, digits, spaces or ()/.'- "
+                           "and start with a letter." % (name, MAX_FIELD_NAME))
+    if name.lower() in KEY_ALIASES or name.lower() in IGNORED_KEYS:
+        raise StorageError("'%s' is already a standard item detail." % name)
+    return name
+
+
+def _clean_custom(values):
+    """``{name: text}`` with valid names and non-empty values."""
+    result = {}
+    if not isinstance(values, dict):
+        return result
+    for name, value in values.items():
+        name = _one_line(name) if isinstance(name, str) else ""
+        value = _clean_str(value) if isinstance(value, (str, int, float)) and not isinstance(value, bool) else ""
+        if name and value and len(name) <= MAX_FIELD_NAME:
+            result[name] = value
+    return result
+
+
+def _clean_names(names):
+    result = []
+    for name in names if isinstance(names, list) else []:
+        if isinstance(name, str):
+            name = _one_line(name)
+            if name and len(name) <= MAX_FIELD_NAME and name.lower() not in [n.lower() for n in result]:
+                result.append(name)
+    return result
 
 
 def _one_line(value):
@@ -174,10 +256,12 @@ class Store(object):
         self.exports_dir = os.path.join(self.root, "exports")
         self.trash_dir = os.path.join(self.root, "trash")
         self.backups_dir = os.path.join(self.root, "backups")
+        self.meta_dir = os.path.join(self.root, "meta")
+        self.fields_path = os.path.join(self.meta_dir, "fields.json")
         self.problems = []  # damaged files that could not be repaired
         self.repaired = []  # damaged files repaired from their .bak copy
         for path in (self.boxes_dir, self.items_dir, self.images_dir, self.exports_dir,
-                     self.trash_dir, self.backups_dir):
+                     self.trash_dir, self.backups_dir, self.meta_dir):
             if not os.path.isdir(path):
                 os.makedirs(path)
 
@@ -198,9 +282,14 @@ class Store(object):
         if data.get("id") != stem or not _ID_RE.match(stem):
             raise ValueError("id does not match the file name")
         if os.path.dirname(path) == self.items_dir:
-            for key in ("description", "location", "origin", "notes"):
+            for key in TEXT_FIELDS:
                 data[key] = _clean_str(data.get(key))
             data["name"] = _one_line(data.get("name")) or "(no name)"
+            try:
+                data["year_acquired"] = parse_year(data.get("year_acquired"))
+            except StorageError:
+                data["year_acquired"] = None
+            data["custom"] = _clean_custom(data.get("custom"))
             data["links"] = _clean_links(data.get("links") if isinstance(data.get("links"), (list, str)) else None)
             try:
                 data["price"] = parse_price(data.get("price"))
@@ -219,6 +308,7 @@ class Store(object):
         else:
             data["label"] = _one_line(data.get("label")) or "(no label)"
             data["description"] = _clean_str(data.get("description"))
+            data["fields"] = _clean_names(data.get("fields"))
         return data
 
     def _read(self, path):
@@ -417,15 +507,20 @@ class Store(object):
     # --------------------------------------------------------------- items
     @staticmethod
     def _normalize_item(data):
-        return {
-            "name": _one_line(data.get("name")),
-            "description": _clean_str(data.get("description")),
-            "location": _clean_str(data.get("location")),
-            "links": _clean_links(data.get("links")),
-            "price": parse_price(data.get("price")),
-            "origin": _clean_str(data.get("origin")),
-            "notes": _clean_str(data.get("notes")),
-        }
+        item = {"name": _one_line(data.get("name"))}
+        for key in TEXT_FIELDS:
+            item[key] = _clean_str(data.get(key))
+        item["links"] = _clean_links(data.get("links"))
+        item["price"] = parse_price(data.get("price"))
+        item["year_acquired"] = parse_year(data.get("year_acquired"))
+        custom = data.get("custom") or {}
+        if not isinstance(custom, dict):
+            raise StorageError("Custom fields must be given as {name: value}.")
+        for name in custom:
+            if not isinstance(name, str) or not _one_line(name) or len(_one_line(name)) > MAX_FIELD_NAME:
+                raise StorageError("Invalid custom field name: %r" % (name,))
+        item["custom"] = _clean_custom(custom)
+        return item
 
     def create_item(self, name, box, **fields):
         """Create an item inside the box with id ``box``."""
@@ -464,6 +559,14 @@ class Store(object):
             raise StorageError("Unknown item fields: %s" % ", ".join(sorted(unknown)))
         merged = dict(item)
         merged.update(changes)
+        if "custom" in changes:
+            # Only the given custom fields change; an empty value removes one.
+            custom = dict(item.get("custom") or {})
+            if not isinstance(changes["custom"], dict):
+                raise StorageError("Custom fields must be given as {name: value}.")
+            for name, value in changes["custom"].items():
+                custom[name] = value
+            merged["custom"] = custom
         normalized = self._normalize_item(merged)
         if not normalized["name"]:
             raise StorageError("An item needs a name.")
@@ -503,6 +606,154 @@ class Store(object):
         self._write_meta(folder, "item", item_id, item["name"], item.get("box"))
         self._remove_json(self._item_path(item_id))
         return True
+
+    # -------------------------------------------------------- custom fields
+    def general_fields(self):
+        """Names of the custom fields that every item has."""
+        for path in (self.fields_path, self.fields_path + ".bak"):
+            try:
+                return _clean_names(self._load_json(path).get("fields"))
+            except (OSError, ValueError, UnicodeDecodeError):
+                continue
+        return []
+
+    def _save_general_fields(self, names):
+        self._write(self.fields_path, {"id": "fields", "fields": names})
+
+    def box_fields(self, box_id):
+        """Names of the custom fields that only the items of this box have."""
+        return list(self.get_box(box_id).get("fields", []))
+
+    def fields_for_box(self, box_id):
+        """All custom fields of the items in a box: general ones first."""
+        names = self.general_fields()
+        if box_id and self.box_exists(box_id):
+            lowered = [n.lower() for n in names]
+            names += [n for n in self.box_fields(box_id) if n.lower() not in lowered]
+        return names
+
+    def item_custom_fields(self, item):
+        """``[(name, value)]`` for an item: every field of its box (value may
+        be empty), then values of fields that no longer apply (e.g. after a
+        move to another box) so that nothing is hidden."""
+        values = item.get("custom") or {}
+        by_lower = dict((n.lower(), n) for n in values)
+        result = []
+        used = set()
+        for name in self.fields_for_box(item.get("box")):
+            key = by_lower.get(name.lower())
+            result.append((name, values.get(key, "") if key else ""))
+            if key:
+                used.add(key)
+        result += [(n, v) for n, v in values.items() if n not in used]
+        return result
+
+    def all_field_names(self):
+        """Every custom field name (general and of any box)."""
+        names = self.general_fields()
+        for box in self.list_boxes():
+            for name in box.get("fields", []):
+                if name.lower() not in [n.lower() for n in names]:
+                    names.append(name)
+        return names
+
+    def _scope(self, box_id):
+        """(current names, save function, affected items) for a scope."""
+        if box_id:
+            box = self.get_box(box_id)
+
+            def save(names):
+                box["fields"] = names
+                box["modified"] = _now()
+                self._write(self._box_path(box_id), box)
+            return list(box.get("fields", [])), save, self.box_items(box_id)
+        return self.general_fields(), self._save_general_fields, self.list_items()
+
+    @staticmethod
+    def _index(names, name):
+        for index, existing in enumerate(names):
+            if existing.lower() == name.lower():
+                return index
+        return -1
+
+    def add_custom_field(self, name, box_id=None):
+        """Add a custom field for all items (``box_id`` None) or for the
+        items of one box. Returns the cleaned name."""
+        name = check_field_name(name)
+        names, save, _items = self._scope(box_id)
+        if self._index(names, name) >= 0:
+            raise StorageError("There is already a field '%s'." % name)
+        if box_id and self._index(self.general_fields(), name) >= 0:
+            raise StorageError("'%s' is already a field of all items." % name)
+        names.append(name)
+        save(names)
+        return name
+
+    def rename_custom_field(self, old, new, box_id=None):
+        """Rename a field; the values in the items are kept."""
+        new = check_field_name(new)
+        names, save, items = self._scope(box_id)
+        index = self._index(names, old)
+        if index < 0:
+            raise StorageError("No field named '%s'." % old)
+        old = names[index]
+        if new.lower() != old.lower() and self._index(names, new) >= 0:
+            raise StorageError("There is already a field '%s'." % new)
+        if box_id and self._index(self.general_fields(), new) >= 0:
+            raise StorageError("'%s' is already a field of all items." % new)
+        for item in items:
+            custom = item.get("custom") or {}
+            if old in custom and new != old:
+                if new in custom:
+                    raise StorageError("Item '%s' already has a value for '%s'." % (item["name"], new))
+        names[index] = new
+        save(names)
+        for item in items:
+            custom = item.get("custom") or {}
+            if old in custom and new != old:
+                item["custom"] = dict((new if k == old else k, v) for k, v in custom.items())
+                item["modified"] = _now()
+                self._write(self._item_path(item["id"]), item)
+        return new
+
+    def field_value_count(self, name, box_id=None):
+        """How many items would lose their value if the field was removed."""
+        return len(self._items_losing(name, box_id))
+
+    def _items_losing(self, name, box_id):
+        names, _save, items = self._scope(box_id)
+        index = self._index(names, name)
+        if index < 0:
+            raise StorageError("No field named '%s'." % name)
+        name = names[index]
+        general = [n.lower() for n in self.general_fields()] if box_id else []
+        result = []
+        for item in items:
+            if name in (item.get("custom") or {}):
+                if box_id and name.lower() in general:
+                    continue  # still a field of all items
+                if not box_id and item.get("box") and self.box_exists(item["box"]) and \
+                        self._index(self.box_fields(item["box"]), name) >= 0:
+                    continue  # still a field of the item's box
+                result.append(item)
+        return result
+
+    def remove_custom_field(self, name, box_id=None):
+        """Remove a field and its values in the items it applied to.
+        Returns the number of items whose value was removed."""
+        names, save, _items = self._scope(box_id)
+        index = self._index(names, name)
+        if index < 0:
+            raise StorageError("No field named '%s'." % name)
+        name = names[index]
+        losing = self._items_losing(name, box_id)
+        del names[index]
+        save(names)
+        for item in losing:
+            item["custom"].pop(name, None)
+            item["modified"] = _now()
+            self._write(self._item_path(item["id"]), item)
+        return len(losing)
 
     # --------------------------------------------------------------- trash
     def _trash_folder(self, kind, obj_id):
@@ -634,11 +885,12 @@ class Store(object):
             if with_images and not item.get("images"):
                 continue
             if words:
-                haystack = " ".join([
-                    item.get("name", ""), item.get("description", ""), item.get("location", ""),
-                    item.get("origin", ""), item.get("notes", ""), " ".join(item.get("links", [])),
-                    labels.get(item.get("box"), ""),
-                ]).lower()
+                parts = [item.get("name", ""), " ".join(item.get("links", [])),
+                         labels.get(item.get("box"), ""), str(item.get("year_acquired") or "")]
+                parts += [item.get(key, "") for key in TEXT_FIELDS]
+                for name, value in (item.get("custom") or {}).items():
+                    parts += [name, value]
+                haystack = " ".join(parts).lower()
                 if not all(word in haystack for word in words):
                     continue
             result.append(item)
@@ -646,6 +898,8 @@ class Store(object):
             result.sort(key=lambda i: (i.get("price") is None, -(i.get("price") or 0)))
         elif sort == "newest":
             result.sort(key=lambda i: i.get("created", ""), reverse=True)
+        elif sort == "year":
+            result.sort(key=lambda i: (i.get("year_acquired") is None, -(i.get("year_acquired") or 0)))
         elif sort == "box":
             result.sort(key=lambda i: (labels.get(i.get("box"), "").lower(), i.get("name", "").lower()))
         return result
