@@ -36,16 +36,16 @@ class ImportPathTests(TempStoreTestCase):
         TempStoreTestCase.setUp(self)
         self.box = self.store.create_box("Box")["id"]
         os.makedirs(os.path.join(self.tmp, "inbox", "pics"))
-        with open(os.path.join(self.tmp, "secret.jpg"), "wb") as fh:
+        with open(os.path.join(self.tmp, "outside.jpg"), "wb") as fh:
             fh.write(TINY_JPEG)
         with open(os.path.join(self.tmp, "inbox", "pics", "ok.jpg"), "wb") as fh:
             fh.write(TINY_JPEG)
 
     def test_images_must_stay_in_the_file_folder(self):
-        secret = os.path.join(self.tmp, "secret.jpg")
-        path = self.write_file("inbox/item.txt", "Name: X\nImages: pics/ok.jpg, ../secret.jpg, %s, "
+        outside = os.path.join(self.tmp, "outside.jpg")
+        path = self.write_file("inbox/item.txt", "Name: X\nImages: pics/ok.jpg, ../outside.jpg, %s, "
                                "\\\\attacker.example\\share\\a.jpg, //attacker.example/s/b.jpg, "
-                               "C:\\x.jpg, ./pics/ok.jpg\n" % secret)
+                               "C:\\x.jpg, ./pics/ok.jpg\n" % outside)
         with mock.patch("os.path.realpath", wraps=os.path.realpath) as realpath, \
                 mock.patch("os.path.isfile", wraps=os.path.isfile) as isfile:
             item, warnings = import_item_file(self.store, path, self.box)
