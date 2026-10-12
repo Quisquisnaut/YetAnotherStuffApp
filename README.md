@@ -11,7 +11,7 @@ It uses only the Python 3 standard library, so there is nothing to install. It r
 | Platform | How to run | User interface |
 |---|---|---|
 | iPhone / iPad – **Pythonista 3** | copy `main.py` and the `stuffapp` folder into Pythonista (or iCloud), open `main.py`, tap ▶ | full touch interface: lists, forms, photo gallery, camera / Photos / Files pickers, Quick Look / Share |
-| Windows | `py main.py` | text menus |
+| Windows | double-click `Start Stuff App.bat` (see [Windows quick setup](#windows-quick-setup)) or `py main.py` | text menus |
 | Linux / macOS | `python3 main.py` | text menus |
 | Android – Termux or Pydroid 3 | `python main.py` / open `main.py` and run it | text menus |
 
@@ -25,6 +25,26 @@ Without Pillow, you can only import JPEG files.
 
 The app has built-in **Help** (in the main menu / home screen) with short
 English guides to every feature.
+
+## Windows quick setup
+
+1. Install **Python 3** once: from the Microsoft Store (search "Python 3.12" or newer),
+   or from [python.org](https://www.python.org/downloads/windows/) (tick **Add python.exe to PATH**).
+2. Download `YetAnotherStuffApp-<version>-windows.zip` from the
+   [Releases](../../releases) page (or build it, see below), right-click it >
+   **Extract All...** into a folder you own, e.g. `Documents\YetAnotherStuffApp`.
+3. Double-click **`Start Stuff App.bat`**. If SmartScreen asks, choose *More info* > *Run anyway*.
+4. Type the number of a menu entry and press Enter. Data goes into `StuffData` next to the app;
+   choose another folder (e.g. OneDrive, shared with Pythonista) in *Settings: data folder*.
+5. Optional: `py -m pip install pillow` to import PNG photos.
+
+The zip contains the same `WINDOWS-SETUP.txt` instructions. To update, unzip the new
+version over the old one: your `StuffData` folder and settings are kept.
+
+Build the zip yourself (any OS): `python tools/make_release.py` writes
+`dist/YetAnotherStuffApp-<version>-windows.zip`. The *Windows release* GitHub
+workflow tests the app on Windows for every pull request and publishes the zip
+as a release when a `v*` tag is pushed (e.g. `git tag v0.3.0 && git push --tags`).
 
 ## Rules
 
