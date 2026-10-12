@@ -33,7 +33,7 @@ import shutil
 import uuid
 from datetime import datetime
 
-from .itemtypes import BUNDLED_IDS, GENERIC
+from .itemtypes import BUNDLED_IDS, GENERIC, PRESET_FIELDS
 
 # The standard item fields, in display order: (key, label, kind). ``kind``
 # is "line" (one line of text), "text" (several lines), "links", "price" or
@@ -68,7 +68,21 @@ STANDARD_KEYS = tuple(key for key, _label, _kind in ITEM_FIELD_SPECS if key != "
 # ``extra`` holds the values of the type's own fields: {field name: text}.
 ITEM_FIELDS = tuple(key for key, _label, _kind in ITEM_FIELD_SPECS) + ("images", "extra")
 EXTRA_PREFIX = "extra:"  # field key of a type's own field: "extra:<name>"
-EXTRA_KINDS = ("line", "text")
+# Kinds of field a type's own fields can have (all values are kept as text,
+# checked and written in one format when entered: see clean_field_value).
+EXTRA_KINDS = ("line", "text", "number", "yesno", "date", "year", "price", "link")
+FIELD_KIND_NAMES = {
+    "line": "Text (one line)", "text": "Text (several lines)", "number": "Number",
+    "yesno": "Yes / No", "date": "Date", "year": "Year", "price": "Price (\u20ac)",
+    "link": "Web link", "links": "Web links",
+}
+FIELD_KIND_HINTS = {
+    "number": "e.g. 16 or 2.5", "yesno": "Yes or No", "date": "YYYY-MM-DD (or YYYY-MM, YYYY)",
+    "year": "e.g. 2023", "price": "e.g. 12.50", "link": "https://...",
+}
+STANDARD_GROUP = "Standard details"
+OWN_FIELDS_GROUP = "Fields of your types"
+MAX_FIELD_VALUE = 10000
 MAX_TYPE_FIELDS = 60
 
 MAX_FIELD_NAME = 40
@@ -128,6 +142,96 @@ def parse_year(value):
     return year
 
 
+def _parse_number(text):
+    text = re.sub(r"[\s'_]", "", text)
+    if "," in text and "." in text:
+        decimal = "," if text.rfind(",") > text.rfind(".") else "."
+        text = text.replace("." if decimal == "," else ",", "")
+    if text.count(",") == 1 and "." not in text:
+        text = text.replace(",", ".")
+    if not re.match(r"^[-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)$", text):
+        raise StorageError("write only a number, e.g. 16 or 2.5")
+    number = float(text)
+    if abs(number) >= 1e15:
+        raise StorageError("the number is too large")
+    if number == int(number):
+        return str(int(number))
+    return ("%.6f" % number).rstrip("0").rstrip(".")
+
+
+_YES = ("yes", "y", "true", "1", "x", "si", "s\u00ec", "ja", "oui", "\u2713")
+_NO = ("no", "n", "false", "0", "nein", "non")
+
+
+def _parse_date(text):
+    match = re.match(r"^([0-9]{4})(?:-([0-9]{1,2})(?:-([0-9]{1,2}))?)?$", text)
+    if match:
+        year, month, day = match.groups()
+    else:
+        match = re.match(r"^([0-9]{1,2})[./-]([0-9]{1,2})[./-]([0-9]{4})$", text)
+        if not match:
+            raise StorageError("write the date like 2025-03-31 (or 31/03/2025, 2025-03, 2025)")
+        day, month, year = match.groups()
+    try:
+        datetime(int(year), int(month or 1), int(day or 1))
+    except ValueError:
+        raise StorageError("no such date: %s" % text)
+    if int(year) < 1000:
+        raise StorageError("no such date: %s" % text)
+    if day:
+        return "%s-%02d-%02d" % (year, int(month), int(day))
+    return "%s-%02d" % (year, int(month)) if month else year
+
+
+def clean_field_value(kind, value):
+    """Check the value of a field of kind ``kind`` and return it as text in
+    one format ("" when empty): numbers "2.5", yes/no "Yes" / "No", dates
+    "2025-03-31" (also "2025-03" or "2025"), years "2023", prices "12.50",
+    links "https://...". Raises StorageError with a short explanation."""
+    if value is None or isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        if value is None:
+            return ""
+        raise StorageError("invalid value")
+    text = _clean_str(value)
+    if kind != "text":
+        text = " ".join(text.split())
+    if not text:
+        return ""
+    if len(text) > MAX_FIELD_VALUE:
+        raise StorageError("the text is too long (max %d characters)" % MAX_FIELD_VALUE)
+    if kind == "number":
+        return _parse_number(text)
+    if kind == "yesno":
+        if text.lower() in _YES:
+            return "Yes"
+        if text.lower() in _NO:
+            return "No"
+        raise StorageError("answer Yes or No")
+    if kind == "date":
+        return _parse_date(text)
+    if kind == "year":
+        return str(parse_year(text))
+    if kind == "price":
+        return "%.2f" % parse_price(text)
+    if kind == "link":
+        if " " in text:
+            raise StorageError("a web link has no spaces")
+        if ":" not in text and "." in text:
+            text = "https://" + text  # "example.com/manual"
+        if not is_safe_link(text):
+            raise StorageError("write a web link like https://example.com")
+        return text
+    return text
+
+
+def value_fits(kind, value):
+    """True if a stored value is in the format of its field's kind."""
+    try:
+        return clean_field_value(kind, value) == _clean_str(value)
+    except StorageError:
+        return False
+
+
 def check_field_name(name):
     """Return the cleaned name of a type's own field or raise StorageError."""
     from .importer import IGNORED_KEYS, KEY_ALIASES  # (importer imports this module)
@@ -177,7 +281,8 @@ def _clean_type_fields(fields, strict=True):
                 label = check_field_name(entry.get("name"))
                 kind = entry.get("kind", "line")
                 if kind not in EXTRA_KINDS:
-                    raise StorageError("A field is either one line ('line') or several lines ('text').")
+                    raise StorageError("Unknown kind of field %r (use one of: %s)."
+                                       % (kind, ", ".join(EXTRA_KINDS)))
                 key = EXTRA_PREFIX + label
             else:
                 raise StorageError("Invalid field: %r" % (entry,))
@@ -570,9 +675,11 @@ class Store(object):
 
     # --------------------------------------------------------------- items
     @staticmethod
-    def _normalize_item(data, item_type):
+    def _normalize_item(data, item_type, check=()):
         """Clean the values of an item. Values of the type's own fields get
-        the field's spelling; one-line fields lose their line breaks."""
+        the field's spelling; one-line fields lose their line breaks. The
+        own fields named in ``check`` (lower case; True = all) are checked
+        against their kind (number, date...) and written in its format."""
         item = {"name": _one_line(data.get("name"))}
         for key in TEXT_FIELDS:
             item[key] = _one_line(data.get(key)) if key in LINE_FIELDS else _clean_str(data.get(key))
@@ -591,7 +698,13 @@ class Store(object):
             if value is not None and not isinstance(value, (str, int, float)) or isinstance(value, bool):
                 raise StorageError("Invalid value for '%s'." % name)
             label, kind = own.get(_one_line(name).lower(), (_one_line(name), "text"))
-            value = _one_line(value) if kind == "line" else _clean_str(value)
+            if check is True or label.lower() in check:
+                try:
+                    value = clean_field_value(kind, value)
+                except StorageError as exc:
+                    raise StorageError("%s: %s." % (label, exc))
+            else:
+                value = _clean_str(value) if kind == "text" else _one_line(value)
             if value:
                 values[label] = value
         item["extra"] = values
@@ -622,7 +735,7 @@ class Store(object):
         fields = dict(fields)
         fields.pop("images", None)
         fields["name"] = name
-        item = self._normalize_item(fields, item_type)
+        item = self._normalize_item(fields, item_type, check=True if strict else ())
         if not item["name"]:
             raise StorageError("An item needs a name.")
         outside = self._outside_type(item, item_type)
@@ -657,17 +770,21 @@ class Store(object):
             raise StorageError("Unknown item fields: %s" % ", ".join(sorted(unknown)))
         merged = dict(item)
         merged.update(changes)
+        check = set()
         if "extra" in changes:
             extra = dict(item.get("extra") or {})
             if not isinstance(changes["extra"], dict):
                 raise StorageError("The type's fields must be given as {name: value}.")
             for name, value in changes["extra"].items():
+                old = [v for k, v in extra.items() if k.lower() == str(name).lower()]
+                if not old or _clean_str(old[0]) != _clean_str(value):
+                    check.add(_one_line(name).lower())  # (unchanged values are kept as they are)
                 for key in [k for k in extra if k.lower() == str(name).lower()]:
                     del extra[key]  # same field written with another case
                 extra[name] = value
             merged["extra"] = extra
         item_type = self.item_type(item)
-        normalized = self._normalize_item(merged, item_type)
+        normalized = self._normalize_item(merged, item_type, check)
         if not normalized["name"]:
             raise StorageError("An item needs a name.")
         before = set(n.lower() for n in self._outside_type(item, item_type))
@@ -886,18 +1003,37 @@ class Store(object):
                         kinds[name] = kind
         return kinds
 
-    def field_choices(self, type_id):
-        """``[(key, label, kind)]`` of the fields that can be added to a type:
-        the standard fields, then the own fields of every type (also the
-        original bundled ones), that the type does not have yet."""
+    def field_groups(self, type_id, search=""):
+        """The fields that can be added to a type and that it does not have
+        yet, as ``[(group, [(key, label, kind)])]``: the standard details,
+        the ready-made fields by group (see ``itemtypes.PRESET_FIELDS``),
+        then own fields of the user's types that are not ready-made. With
+        ``search``, only fields whose name, kind or group contain all its
+        words. Empty groups are left out."""
         have = set(key.lower() for key, _label, _kind in self.get_type(type_id)["fields"])
-        choices = [(key, FIELD_LABELS[key], FIELD_KINDS[key]) for key in STANDARD_KEYS if key not in have]
-        own = {}
+        groups = [(STANDARD_GROUP, [(key, FIELD_LABELS[key], FIELD_KINDS[key]) for key in STANDARD_KEYS])]
+        known = set(STANDARD_KEYS)
+        for group, fields in PRESET_FIELDS:
+            groups.append((group, [(EXTRA_PREFIX + name, name, kind) for name, kind in fields]))
+            known.update((EXTRA_PREFIX + name).lower() for name, _kind in fields)
+        others = {}
         for item_type in self.list_types() + bundled_types():
             for key, label, kind in item_type["fields"]:
-                if key.startswith(EXTRA_PREFIX) and key.lower() not in have and key.lower() not in own:
-                    own[key.lower()] = (key, label, kind)
-        return choices + sorted(own.values(), key=lambda f: f[1].lower())
+                if key.startswith(EXTRA_PREFIX) and key.lower() not in known and key.lower() not in others:
+                    others[key.lower()] = (key, label, kind)
+        groups.append((OWN_FIELDS_GROUP, sorted(others.values(), key=lambda f: f[1].lower())))
+        words = search.lower().split()
+        result = []
+        for group, fields in groups:
+            fields = [f for f in fields if f[0].lower() not in have and all(
+                word in " ".join((f[1], FIELD_KIND_NAMES.get(f[2], f[2]), group)).lower() for word in words)]
+            if fields:
+                result.append((group, fields))
+        return result
+
+    def field_choices(self, type_id, search=""):
+        """``field_groups`` as one list ``[(key, label, kind)]``."""
+        return [field for _group, fields in self.field_groups(type_id, search) for field in fields]
 
     def type_counts(self):
         """``{type_id: number of items}``."""
@@ -979,9 +1115,9 @@ class Store(object):
         raise StorageError("The type '%s' has no field %s." % (item_type["name"], key))
 
     def add_type_field(self, type_id, field, kind="line"):
-        """Add a standard field (its key, e.g. "price") or a new own field
-        (its name, with ``kind`` "line" or "text") to a type (or a field key from ``field_choices``). Returns
-        the field key."""
+        """Add a standard field (its key, e.g. "price"), a field key from
+        ``field_choices`` or a new own field (its name, with ``kind`` one of
+        EXTRA_KINDS) to a type. Returns the field key."""
         types, item_type = self._user_type(type_id)
         if isinstance(field, str) and field.startswith(EXTRA_PREFIX):
             field = field[len(EXTRA_PREFIX):]  # a field key from field_choices()
@@ -1038,8 +1174,20 @@ class Store(object):
                 self._write(self._item_path(item["id"]), item)
         return EXTRA_PREFIX + new_name
 
+    def type_field_misfits(self, type_id, key, kind):
+        """Number of items of a type whose value of field ``key`` is not in
+        the format of ``kind`` (they are kept as they are)."""
+        count = 0
+        for item in self.type_items(type_id):
+            value = self.field_value(item, key)
+            if _has_value(value) and not value_fits(kind, value):
+                count += 1
+        return count
+
     def set_type_field_kind(self, type_id, key, kind):
-        """Make one of a user type's own fields one line or several lines."""
+        """Change the kind of one of a type's own fields. Values that fit
+        the new kind are written in its format; the others are kept as they
+        are (see ``type_field_misfits``) and checked when changed."""
         types, item_type = self._user_type(type_id)
         index = self._field_index(item_type, key)
         fields = _fields_to_json(item_type["fields"])
@@ -1048,6 +1196,17 @@ class Store(object):
         fields[index]["kind"] = kind
         item_type["fields"] = _clean_type_fields(fields)
         self._save_user_types(types)
+        name = key[len(EXTRA_PREFIX):].lower()
+        for item in self.type_items(type_id):
+            for other, value in list((item.get("extra") or {}).items()):
+                if other.lower() == name and value_fits(kind, value) is False:
+                    try:
+                        fixed = clean_field_value(kind, value)
+                    except StorageError:
+                        continue
+                    item["extra"][other] = fixed
+                    item["modified"] = _now()
+                    self._write(self._item_path(item["id"]), item)
 
     def move_type_field(self, type_id, key, offset):
         """Move a field of a user type up (-1) or down (+1)."""

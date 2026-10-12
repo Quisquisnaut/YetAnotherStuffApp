@@ -80,10 +80,14 @@ type. These types come with the app (their fields are listed in the guide
 
 - Generic: every standard detail (see "Items").
 - Book, Furniture, Device, Gadget, Media, Plant, Appliance, Shoe,
-  Clothes, Vehicle, Card, Key: the useful standard details plus their own
+  Clothes, Vehicle, Card, Key, Sportsgear, Vinyl (records), DVD/BR (DVDs
+  and Blu-rays), USB/SD (USB sticks and memory cards), IoT (smart-home
+  devices), Sub (subscriptions: payment amount, next payment, expiration
+  date...), Fidelity (store loyalty cards), DIY (tools): the useful
+  standard details plus their own
   fields, e.g. Author, Publisher, Year published, Location and Bookshelf
-  for a Book,
-  Color and Size for Furniture, Specs for a Device.
+  for a Book, Color and Size for Furniture, Storage (GB), RAM (GB),
+  Wi-Fi, Ports, operating systems and firmware version for a Device.
 
 The Card type is for ID, bank, loyalty or membership cards. Never store a
 PIN, a password or a full card number: only the last digits.
@@ -91,16 +95,19 @@ PIN, a password or a full card number: only the last digits.
 Every type can be changed, also the ones that come with the app, in the
 Type Editor: Home > Item types (text menus: main menu > Item types), then
 tap a type. A new type opens in the Type Editor right away.
-- Add a field: a list shows every field you can add: "New field..." first,
-  then the standard fields (Price, Brand...), then the fields of all the
-  types (Color, Size, Specs, Author...), each with its kind (one line,
-  several lines...). Pick one, or pick "New field..." and give it a name
-  (e.g. "Players" or "Warranty until") and choose one line or several lines.
+- Add a field: a search box at the top and, below it, "New field..."
+  and the fields you can add, grouped: Standard details (Price, Brand...),
+  ready-made fields (General, Electronics & IT, Books & media, Clothes &
+  shoes, Furniture & home, Plants, Vehicles, Cards & keys) and the fields
+  of your own types. Each shows its kind. Type in the search box (e.g.
+  "GB", "date", "color") to narrow the list; tap a field to add it.
+  Text menus: type a search (or just Enter), then the number.
+- New field...: choose its kind, then type its label (e.g. "Players").
 - Remove a field: pick the field from the list (or tap a field > Remove).
   It asks for confirmation and tells you how many items have a value for
   it; those values are deleted (a backup can bring them back).
 - Tap a field to move it up or down, rename your own fields (values are
-  kept) or switch them between one line and several lines.
+  kept) or change their kind.
 - Rename the type.
 - Make a copy: a new type that starts with the same fields.
 - Delete a type: only when no item has it any more. Generic cannot be
@@ -110,6 +117,19 @@ tap a type. A new type opens in the Type Editor right away.
   deleted type).
 - Create a type: give it a name and start from no fields or from a copy
   of another type.
+
+Kinds of field and how to fill them in:
+- Text (one line) / Text (several lines): any text.
+- Number: 16, 2.5 or 2,5 (just the number: put the unit in the label,
+  e.g. "Storage (GB)").
+- Yes / No: Yes or No (in the text menus also y / n).
+- Date: 2025-03-31 or 31/03/2025; also just a month (2025-03) or a year.
+- Year: a 4-digit year such as 1965.
+- Price (EUR): like the paid price, e.g. 12.50.
+- Web link: https://... (shown as a link you can open).
+Values are checked when you save. If you change a field's kind, values
+that fit are converted (e.g. "y" becomes Yes); values that do not fit are
+kept as they are and shown, and you are told how many there are.
 
 Field names must start with a letter, can be up to 40 characters and
 cannot repeat a standard detail (Name, Price, Brand...). If an item has a
@@ -143,8 +163,9 @@ Images are file names relative to the text file.
 
 If the file names a Box that exists, you are offered that box; otherwise you
 choose one. If the file names a Type that exists, the item gets that type;
-otherwise you choose one. Values for fields the type does not have are
-added to the notes (and you are told). A Markdown file exported by this app
+otherwise you choose one. Values for fields the type does not have, and values that do not fit
+their field's kind (e.g. "lots" for a Number), are added to the notes
+(and you are told). A Markdown file exported by this app
 can be imported back.
 
 Example:

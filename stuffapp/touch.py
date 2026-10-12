@@ -23,11 +23,11 @@ import photos
 import ui
 
 from . import __version__, backup, config, export, guide
-from .app import KIND_NAMES, TRASH_DAYS, describe_filters, field_choice_label, hidden_dirs, startup
+from .app import KIND_CHOICES, KIND_NAMES, TRASH_DAYS, describe_filters, hidden_dirs, startup
 from .images import pil_to_jpeg_bytes, to_jpeg_bytes
 from .importer import import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
-from .storage import (EXTRA_PREFIX, FIELD_LABELS, SORT_KEYS, Store, StorageError,
+from .storage import (EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_LABELS, SORT_KEYS, Store, StorageError,
                       is_safe_link)
 from .ui import IMAGE_FILE_EXTS, TEXT_FILE_EXTS, find_files
 
@@ -134,6 +134,17 @@ def thumbnail(path, size=120):
         except Exception:
             _thumbs[key] = None
     return _thumbs[key]
+
+
+YES_NO = ["\u2013", "Yes", "No"]  # (first segment: no answer)
+
+
+def widget_text(kind, field):
+    """The value typed or chosen in an item editor input."""
+    if kind == "yesno":
+        index = field.selected_index
+        return "" if index <= 0 else field.segments[index]
+    return field.text
 
 
 def link_button(title, frame, action, color=ACCENT):
@@ -396,9 +407,14 @@ class ItemScreen(Screen):
                                  lambda s: box and self.app.open_box(box["id"]))
         self.scroll.add_subview(box_button)
         y += 38
-        for label, value in export.detail_rows(store, item):
+        for label, value, kind in export.detail_rows(store, item, kinds=True):
             y = self._label(label.upper(), y, ("<system>", 12), MUTED)
-            y = self._label(value, y, ("<system>", 17), TEXT) + 10
+            if kind == "link":
+                self.scroll.add_subview(link_button(value, (PAD, y, width, 30),
+                                                    functools.partial(self.on_link, value)))
+                y += 42
+            else:
+                y = self._label(value, y, ("<system>", 17), TEXT) + 10
         if item.get("links"):
             y = self._label("WEB LINKS", y, ("<system>", 12), MUTED)
             for link in item["links"]:
@@ -481,6 +497,13 @@ class ItemEditor(Screen):
         if kind == "text":
             field = ui.TextView(font=("<system>", 17), text=value or "")
             field.corner_radius = 6
+        elif kind == "yesno":
+            field = ui.SegmentedControl(segments=YES_NO)
+            field.selected_index = YES_NO.index(value) if value in YES_NO else 0
+            if value and value not in YES_NO:  # (written before the field became Yes / No)
+                field.segments = YES_NO + [value]
+                field.selected_index = len(YES_NO)
+            field.tint_color = ACCENT
         else:
             field = ui.TextField(font=("<system>", 17), text=value or "")
             field.clear_button_mode = "while_editing"
@@ -491,6 +514,14 @@ class ItemEditor(Screen):
             elif kind == "year":
                 field.keyboard_type = ui.KEYBOARD_NUMBER_PAD
                 field.placeholder = "e.g. 2023"
+            elif kind == "number":
+                field.keyboard_type = ui.KEYBOARD_DECIMAL_PAD
+                field.placeholder = FIELD_KIND_HINTS["number"]
+            elif kind in ("date", "link"):
+                field.keyboard_type = ui.KEYBOARD_NUMBERS if kind == "date" else ui.KEYBOARD_URL
+                field.autocapitalization_type = ui.AUTOCAPITALIZE_NONE
+                field.autocorrection_type = False
+                field.placeholder = FIELD_KIND_HINTS[kind]
         field.background_color = FIELD_BG
         field.text_color = TEXT
         self.scroll.add_subview(title)
@@ -501,7 +532,7 @@ class ItemEditor(Screen):
         """(Re)create the inputs for the fields of the chosen type, keeping
         what was typed in fields that both types have."""
         for key, kind, title, field in self.widgets:
-            self.typed[key.lower()] = field.text
+            self.typed[key.lower()] = widget_text(kind, field)
             self.scroll.remove_subview(title)
             self.scroll.remove_subview(field)
         self.widgets = []
@@ -551,9 +582,9 @@ class ItemEditor(Screen):
         data = {"extra": {}}
         for key, kind, title, field in self.widgets:
             if key.startswith(EXTRA_PREFIX):
-                data["extra"][key[len(EXTRA_PREFIX):]] = field.text
+                data["extra"][key[len(EXTRA_PREFIX):]] = widget_text(kind, field)
             else:
-                data[key] = field.text
+                data[key] = widget_text(kind, field)
         return data
 
     @task
@@ -576,8 +607,9 @@ class ItemEditor(Screen):
 
     @task
     def on_save(self, sender):
-        for _key, _kind, _title, field in self.widgets:
-            field.end_editing()
+        for _key, kind, _title, field in self.widgets:
+            if kind != "yesno":
+                field.end_editing()
         data = self.values()
         store = self.app.store
         if not self.box_id or not store.box_exists(self.box_id):
@@ -908,7 +940,8 @@ class TypeScreen(TableScreen):
             rows.append({"title": "Remove a field", "color": DANGER, "on_tap": self.on_remove_field,
                          "accessory": "none"})
         count = store.type_counts().get(self.type_id, 0)
-        note = "Add a field: pick one from the list or New field. Tap a field to move, rename or remove it."
+        note = ("Add a field: search or pick a ready-made field, or make a New field (choose its kind and "
+                "label). Tap a field to move, rename, remove it or change its kind.")
         if item_type["bundled"]:
             note += " This type came with the app%s." % (
                 "; Actions > Reset brings back the original" if item_type["changed"] else "")
@@ -950,26 +983,8 @@ class TypeScreen(TableScreen):
                 self.app.pop()
 
     def on_add_field(self):
-        self._add_field()
-
-    @task
-    def _add_field(self):
-        store = self.app.store
-        choices = store.field_choices(self.type_id)
-        index = choose("Add a field", ["New field..."] + [field_choice_label(c) for c in choices])
-        if index is None:
-            return
-        if index:
-            key, _label, kind = choices[index - 1]
-            store.add_type_field(self.type_id, key, kind)
-        else:
-            name = ask_text("New field", "Name of the field, e.g. Warranty, Players, Size")
-            kind = choose("Kind of field", ["One line", "Several lines"])
-            if kind is None:
-                return
-            store.add_type_field(self.type_id, name, "line" if kind == 0 else "text")
-        self.app.refresh_all()
-        hud("Field added")
+        if not self.gone:
+            self.app.push(FieldPickerScreen(self.app, self.type_id))
 
     def on_remove_field(self):
         self._remove_field()
@@ -997,7 +1012,7 @@ class TypeScreen(TableScreen):
         own = key.startswith(EXTRA_PREFIX)
         options = ["Move up", "Move down", "Remove"]
         if own:
-            options += ["Rename", "Make it one line / several lines"]
+            options += ["Rename", "Change kind"]
         index = choose(label, options)
         if index in (0, 1):
             store.move_type_field(self.type_id, key, -1 if index == 0 else 1)
@@ -1009,10 +1024,98 @@ class TypeScreen(TableScreen):
                                                                   label))
         elif index == 4:
             kind = dict((k, kd) for k, _l, kd in store.get_type(self.type_id)["fields"]).get(key)
-            store.set_type_field_kind(self.type_id, key, "text" if kind == "line" else "line")
+            picked = choose("Kind of '%s' (now: %s)" % (label, KIND_NAMES.get(kind, kind)),
+                            [text for _kind, text in KIND_CHOICES])
+            if picked is None:
+                return
+            new_kind = KIND_CHOICES[picked][0]
+            misfits = store.type_field_misfits(self.type_id, key, new_kind)
+            if misfits and not confirm("Change the kind?", "%d item(s) have a value that is not a valid %s; "
+                                       "it is kept as it is until you change it." % (misfits, KIND_NAMES[new_kind]),
+                                       "Change kind"):
+                return
+            store.set_type_field_kind(self.type_id, key, new_kind)
         else:
             return
         self.app.refresh_all()
+
+
+class FieldPickerScreen(Screen):
+    """Type Editor > Add a field: a search box, "New field...", then the
+    fields the type can get, grouped (standard, ready-made, your types)."""
+
+    def __init__(self, app, type_id):
+        Screen.__init__(self, app, "Add a field")
+        self.type_id = type_id
+        self.field = ui.TextField(placeholder="Search fields (e.g. GB, date, color)", font=("<system>", 17))
+        self.field.clear_button_mode = "while_editing"
+        self.field.autocapitalization_type = ui.AUTOCAPITALIZE_NONE
+        self.field.autocorrection_type = False
+        self.field.background_color = FIELD_BG
+        self.field.text_color = TEXT
+        self.field.bordered = False
+        self.field.corner_radius = 8
+        self.field.delegate = self
+        self.add_subview(self.field)
+        self.source = RowsSource()
+        self.table = ui.TableView()
+        self.table.data_source = self.table.delegate = self.source
+        self.table.background_color = BG
+        self.add_subview(self.table)
+        self.refresh()
+
+    def layout(self):
+        self.field.frame = (PAD / 2, 8, self.width - PAD, 36)
+        self.table.frame = (0, 52, self.width, self.height - 52)
+
+    def textfield_did_change(self, textfield):
+        self.refresh()
+
+    def refresh(self):
+        store = self.app.store
+        if self.gone or not store.type_exists(self.type_id):
+            self.gone = True
+            self.source.sections = [("", [{"title": "This type was deleted.", "color": MUTED}])]
+            self.table.reload()
+            return
+        sections = [("", [{"title": "New field\u2026", "subtitle": "choose its kind and label",
+                           "color": ACCENT, "on_tap": self.on_new, "accessory": "none"}])]
+        for group, fields in store.field_groups(self.type_id, self.field.text or ""):
+            sections.append((group, [{"title": label, "subtitle": KIND_NAMES.get(kind, kind),
+                                      "on_tap": functools.partial(self.on_pick, key, label, kind),
+                                      "accessory": "none"} for key, label, kind in fields]))
+        if len(sections) == 1:
+            sections.append(("", [{"title": "No field matches the search", "color": MUTED}]))
+        self.source.sections = sections
+        self.table.reload()
+
+    def on_pick(self, key, label, kind):
+        self._add(key, kind, label)
+
+    @task
+    def _add(self, key, kind, label):
+        self.app.store.add_type_field(self.type_id, key, kind)
+        self._done(label)
+
+    def on_new(self):
+        self._new()
+
+    @task
+    def _new(self):
+        index = choose("Kind of the new field", [text for _kind, text in KIND_CHOICES])
+        if index is None:
+            return
+        kind = KIND_CHOICES[index][0]
+        label = ask_text("Label of the new field", "%s, e.g. Players, Storage (GB), Warranty until"
+                         % KIND_NAMES[kind], self.field.text or "")
+        self.app.store.add_type_field(self.type_id, label, kind)
+        self._done(label)
+
+    def _done(self, label):
+        self.field.end_editing()
+        self.app.refresh_all()
+        self.app.pop()
+        hud("Added: %s" % label.strip()[:30])
 
 
 class HelpScreen(TableScreen):

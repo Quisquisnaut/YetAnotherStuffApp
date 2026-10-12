@@ -106,6 +106,31 @@ class ConsoleUI(object):
                 return int(answer) - 1
             self.print("Please enter a number between 0 and %d." % len(options))
 
+    def choose_grouped(self, title, groups):
+        """Like ``choose`` with headings: ``groups`` is ``[(heading,
+        [options])]``; the options are numbered across the groups. Returns
+        the index in the list of all options or ``None``."""
+        options = [option for _heading, group in groups for option in group]
+        if not options:
+            return None
+        self.print("")
+        self.print("== %s ==" % title)
+        number = 0
+        for heading, group in groups:
+            if heading and group:
+                self.print("  -- %s --" % heading)
+            for option in group:
+                number += 1
+                self.print("  %2d. %s" % (number, option))
+        self.print("   0. Back")
+        while True:
+            answer = self._ask("> ").strip()
+            if answer in ("", "0", "q", "b"):
+                return None
+            if answer.isdigit() and 1 <= int(answer) <= len(options):
+                return int(answer) - 1
+            self.print("Please enter a number between 0 and %d." % len(options))
+
     def form(self, title, fields):
         """``fields`` is a list of ``(key, label, default)``. Returns a dict.
 

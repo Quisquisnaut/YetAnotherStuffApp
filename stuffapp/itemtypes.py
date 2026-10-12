@@ -6,9 +6,13 @@ type; the name is always there and every item can have photos.
 A type's ``fields`` list holds, in display order:
 
 * standard field keys (see ``storage.ITEM_FIELD_SPECS``), e.g. "price";
-* the type's own fields as ``{"name": ..., "kind": "line" | "text"}``
-  ("line" = one line, "text" = several lines). Their values are kept in
-  ``item["extra"]`` by name.
+* the type's own fields as ``{"name": ..., "kind": ...}``. Their values
+  are kept in ``item["extra"]`` by name. The kinds are listed in
+  ``storage.FIELD_KIND_NAMES``: "line" (text, one line), "text" (several
+  lines), "number", "yesno", "date", "year", "price" (EUR) and "link".
+
+``PRESET_FIELDS`` is the catalog of ready-made fields offered by the Type
+Editor (grouped); the bundled types take their own fields from it.
 
 These are the starting versions. The user can rename them, change their
 fields, delete them (all but Generic, which is used when an item's type is
@@ -25,12 +29,91 @@ _GENERIC_FIELDS = [
     "maker", "brand", "seller", "made_in", "year_acquired", "issues", "notes",
 ]
 
+# Ready-made fields, by group: (name, kind). Every name appears once.
+PRESET_FIELDS = [
+    ("General", [
+        ("Model", "line"), ("Color", "line"), ("Size", "line"), ("Material", "line"),
+        ("Weight (kg)", "number"), ("Quantity", "number"), ("Condition", "line"),
+        ("Specs", "text"), ("Accessories", "text"), ("Purchase date", "date"),
+        ("Warranty until", "date"), ("Last service", "date"), ("Next service", "date"),
+        ("Expiration date", "date"), ("Current value", "price"), ("Insured", "yesno"),
+        ("Gift", "yesno"), ("Lent to", "line"), ("Used by", "line"), ("Manual", "link"),
+        ("Support page", "link"),
+    ]),
+    ("Electronics & IT", [
+        ("Processor", "line"), ("RAM (GB)", "number"), ("Storage (GB)", "number"),
+        ("Storage type", "line"), ("Graphics", "line"), ("Screen size (inches)", "number"),
+        ("Display resolution (pixels)", "line"), ("Wi-Fi", "yesno"), ("Mobile data", "yesno"),
+        ("Bluetooth", "yesno"), ("NFC", "yesno"), ("GPS", "yesno"), ("Touchscreen", "yesno"),
+        ("SIM / eSIM", "line"), ("Camera (MP)", "number"), ("Ports", "text"),
+        ("Original operating system", "line"), ("Current operating system", "line"),
+        ("OS version", "line"), ("Firmware version", "line"), ("Bundled software", "text"),
+        ("Battery", "line"), ("Battery capacity (mAh)", "number"), ("Charger / cable", "line"),
+        ("Power supply", "line"), ("Power (W)", "number"), ("Energy class", "line"),
+        ("Voltage (V)", "number"), ("Power source", "line"), ("Connector", "line"),
+        ("File system", "line"), ("Speed class", "line"), ("Encrypted", "yesno"), ("Contents", "text"),
+        ("Hub / ecosystem", "line"), ("Protocol", "line"), ("App", "line"),
+        ("IMEI", "line"), ("MAC address", "line"), ("IP address", "line"), ("Hostname", "line"),
+    ]),
+    ("Books & media", [
+        ("Author", "line"), ("Publisher", "line"), ("Year published", "year"), ("Bookshelf", "line"),
+        ("ISBN", "line"), ("Edition", "line"), ("Language", "line"), ("Pages", "number"),
+        ("Genre", "line"), ("Format", "line"), ("Series", "line"), ("Artist / author", "line"),
+        ("Label / studio", "line"), ("Release year", "year"), ("Platform", "line"),
+        ("Discs", "number"), ("Region", "line"), ("Director", "line"), ("Cast", "text"),
+        ("Runtime (min)", "number"), ("Subtitles", "line"), ("Age rating", "line"),
+        ("Speed (RPM)", "number"), ("Catalog number", "line"), ("Sleeve condition", "line"),
+        ("Tracklist", "text"),
+    ]),
+    ("Sports & hobbies", [
+        ("Sport", "line"), ("Skill level", "line"),
+    ]),
+    ("Tools & DIY", [
+        ("Tool kind", "line"), ("Bits / blades", "text"), ("Spare parts", "text"),
+    ]),
+    ("Subscriptions", [
+        ("Provider", "line"), ("Plan", "line"), ("Customer number", "line"),
+        ("Payment amount", "price"), ("Billing period", "line"), ("Next payment", "date"),
+        ("Payment method", "line"), ("Start date", "date"), ("Auto-renew", "yesno"),
+        ("Cancellation notice", "line"),
+    ]),
+    ("Clothes & shoes", [
+        ("Garment", "line"), ("Width", "line"), ("Style", "line"), ("Season", "line"),
+        ("Care instructions", "text"),
+    ]),
+    ("Furniture & home", [
+        ("Room", "line"), ("Assembly notes", "text"), ("Dimensions (cm)", "line"),
+    ]),
+    ("Plants", [
+        ("Species", "line"), ("Variety", "line"), ("Light", "line"), ("Watering", "line"),
+        ("Soil", "line"), ("Fertilizer", "line"), ("Pot size", "line"), ("Last repotted", "date"),
+        ("Care", "text"),
+    ]),
+    ("Vehicles", [
+        ("Plate number", "line"), ("VIN / frame number", "line"), ("Fuel", "line"),
+        ("Engine", "line"), ("Mileage (km)", "number"), ("Year of manufacture", "year"),
+        ("Insurance", "line"),
+    ]),
+    ("Cards & keys", [
+        ("Card kind", "line"), ("Issuer", "line"), ("Holder", "line"),
+        ("Card number (last digits)", "line"), ("Valid from", "date"), ("Valid until", "date"),
+        ("Phone if lost", "line"), ("Opens", "line"), ("Key kind", "line"), ("Key number", "line"),
+        ("Tag / color", "line"), ("Copies", "number"), ("Who has copies", "text"),
+        ("Store / chain", "line"), ("Member number", "line"), ("Points", "number"),
+        ("Points expire", "date"),
+    ]),
+]
+
+PRESET_KINDS = dict((name, kind) for _group, fields in PRESET_FIELDS for name, kind in fields)
+
+
 # Usual fields at the end of most types.
 _END = ["links", "price", "origin", "seller", "year_acquired", "issues", "notes"]
 
 
-def _f(name, kind="line"):
-    return {"name": name, "kind": kind}
+def _f(name):
+    """A preset field (its kind comes from PRESET_FIELDS)."""
+    return {"name": name, "kind": PRESET_KINDS[name]}
 
 
 BUNDLED_TYPES = [
@@ -39,38 +122,74 @@ BUNDLED_TYPES = [
                       "location", _f("Bookshelf"), _f("ISBN"), _f("Edition"), _f("Language"), _f("Pages"),
                       _f("Genre"), _f("Format"), _f("Series"), _f("Lent to")] + _END),
     ("furniture", "Furniture", ["description", "location", _f("Color"), _f("Size"), _f("Material"),
-                                _f("Weight"), "brand", "maker", "product_code",
-                                _f("Assembly notes", "text"), "made_in"] + _END),
-    ("device", "Device", ["description", "location", "brand", "maker", _f("Model"), _f("Specs", "text"),
-                          "product_code", "serial_number", _f("Operating system"),
-                          _f("Accessories", "text"), _f("Warranty until"), "made_in"] + _END),
-    ("gadget", "Gadget", ["description", "location", "brand", "maker", _f("Model"), _f("Specs", "text"),
-                          _f("Color"), "product_code", "serial_number", _f("Battery"),
+                                _f("Weight (kg)"), "brand", "maker", "product_code",
+                                _f("Assembly notes"), "made_in"] + _END),
+    ("device", "Device", ["description", "location", "brand", "maker", _f("Model"), _f("Specs"),
+                          _f("Processor"), _f("RAM (GB)"), _f("Storage (GB)"), _f("Screen size (inches)"),
+                          _f("Display resolution (pixels)"), _f("Wi-Fi"), _f("Mobile data"), _f("Bluetooth"),
+                          _f("Ports"), _f("Color"), _f("Original operating system"),
+                          _f("Current operating system"), _f("OS version"), _f("Firmware version"),
+                          _f("Bundled software"), "product_code", "serial_number", _f("Accessories"),
+                          _f("Warranty until"), "made_in"] + _END),
+    ("gadget", "Gadget", ["description", "location", "brand", "maker", _f("Model"), _f("Specs"),
+                          _f("Color"), _f("Storage (GB)"), _f("Wi-Fi"), _f("Mobile data"), _f("Bluetooth"),
+                          _f("Firmware version"), "product_code", "serial_number", _f("Battery"),
                           _f("Charger / cable"), _f("Warranty until"), "made_in"] + _END),
     ("media", "Media", ["description", "location", _f("Format"), _f("Artist / author"),
                         _f("Label / studio"), _f("Release year"), _f("Genre"), _f("Platform"),
                         _f("Discs"), _f("Region"), _f("Language"), "product_code", _f("Lent to")] + _END),
     ("plant", "Plant", ["description", "location", _f("Species"), _f("Variety"), _f("Light"),
                         _f("Watering"), _f("Soil"), _f("Fertilizer"), _f("Pot size"), _f("Last repotted"),
-                        _f("Care", "text")] + _END),
-    ("appliance", "Appliance", ["description", "location", "brand", "maker", _f("Model"), _f("Specs", "text"),
+                        _f("Care")] + _END),
+    ("appliance", "Appliance", ["description", "location", "brand", "maker", _f("Model"), _f("Specs"),
                                 "product_code", "serial_number", _f("Power (W)"), _f("Energy class"),
                                 _f("Color"), _f("Size"), _f("Warranty until"), _f("Last service"),
                                 "made_in"] + _END),
     ("shoe", "Shoe", ["description", "location", "brand", "maker", _f("Size"), _f("Width"), _f("Color"),
                       _f("Material"), _f("Style"), _f("Season"), "product_code", "made_in"] + _END),
     ("clothes", "Clothes", ["description", "location", "brand", "maker", _f("Garment"), _f("Size"),
-                            _f("Color"), _f("Material"), _f("Season"), _f("Care instructions", "text"),
+                            _f("Color"), _f("Material"), _f("Season"), _f("Care instructions"),
                             "product_code", "made_in"] + _END),
     ("vehicle", "Vehicle", ["description", "location", "brand", "maker", _f("Model"), _f("Plate number"),
-                            _f("VIN / frame number"), _f("Color"), _f("Fuel"), _f("Engine"), _f("Mileage"),
+                            _f("VIN / frame number"), _f("Color"), _f("Fuel"), _f("Engine"), _f("Mileage (km)"),
                             _f("Year of manufacture"), _f("Insurance"), _f("Next service"), "made_in"] + _END),
     ("card", "Card", ["description", "location", _f("Card kind"), _f("Issuer"), _f("Holder"),
                       _f("Card number (last digits)"), _f("Valid from"), _f("Valid until"),
                       _f("Phone if lost"), "links", "price", "origin", "year_acquired", "issues", "notes"]),
     ("key", "Key", ["description", "location", _f("Opens"), _f("Key kind"), _f("Key number"),
-                    _f("Tag / color"), _f("Copies"), _f("Who has copies", "text"),
+                    _f("Tag / color"), _f("Copies"), _f("Who has copies"),
                     "origin", "price", "year_acquired", "issues", "notes"]),
+    ("sportsgear", "Sportsgear", ["description", "location", _f("Sport"), "brand", "maker", _f("Model"),
+                                  _f("Size"), _f("Color"), _f("Material"), _f("Weight (kg)"), _f("Skill level"),
+                                  _f("Used by"), _f("Condition"), _f("Last service"), "product_code",
+                                  "serial_number", _f("Lent to")] + _END),
+    ("vinyl", "Vinyl", ["description", "location", _f("Artist / author"), _f("Label / studio"),
+                        _f("Release year"), _f("Genre"), _f("Speed (RPM)"), _f("Discs"), _f("Catalog number"),
+                        _f("Condition"), _f("Sleeve condition"), _f("Tracklist"), "made_in",
+                        _f("Lent to")] + _END),
+    ("dvd_br", "DVD/BR", ["description", "location", _f("Format"), _f("Director"), _f("Cast"),
+                          _f("Release year"), _f("Genre"), _f("Runtime (min)"), _f("Region"), _f("Language"),
+                          _f("Subtitles"), _f("Discs"), _f("Age rating"), "product_code", _f("Lent to")] + _END),
+    ("usb_sd", "USB/SD", ["description", "location", "brand", "maker", _f("Model"), _f("Storage type"),
+                          _f("Storage (GB)"), _f("Connector"), _f("Speed class"), _f("File system"),
+                          _f("Encrypted"), _f("Contents"), _f("Color"), "product_code", "serial_number",
+                          _f("Lent to")] + _END),
+    ("iot", "IoT", ["description", "location", _f("Room"), "brand", "maker", _f("Model"), _f("Specs"),
+                    _f("Hub / ecosystem"), _f("Protocol"), _f("Wi-Fi"), _f("Bluetooth"), _f("App"),
+                    _f("Firmware version"), _f("IP address"), _f("MAC address"), _f("Hostname"),
+                    _f("Power source"), _f("Battery"), "product_code", "serial_number", _f("Warranty until"),
+                    "made_in"] + _END),
+    ("subscription", "Sub", ["description", _f("Provider"), _f("Plan"), _f("Customer number"),
+                             _f("Payment amount"), _f("Billing period"), _f("Next payment"),
+                             _f("Payment method"), _f("Start date"), _f("Expiration date"), _f("Auto-renew"),
+                             _f("Cancellation notice"), _f("Used by"), "links", "issues", "notes"]),
+    ("fidelity", "Fidelity", ["description", "location", _f("Store / chain"), _f("Holder"),
+                              _f("Member number"), _f("Points"), _f("Points expire"), _f("Valid until"),
+                              _f("App"), "links", "year_acquired", "issues", "notes"]),
+    ("diy", "DIY", ["description", "location", _f("Tool kind"), "brand", "maker", _f("Model"),
+                    _f("Power source"), _f("Power (W)"), _f("Voltage (V)"), _f("Battery"), _f("Size"),
+                    _f("Bits / blades"), _f("Accessories"), _f("Spare parts"), _f("Last service"),
+                    _f("Lent to"), "product_code", "serial_number", _f("Warranty until"), "made_in"] + _END),
 ]
 
 BUNDLED_IDS = tuple(type_id for type_id, _name, _fields in BUNDLED_TYPES)

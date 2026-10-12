@@ -28,11 +28,12 @@ def format_price(price):
     return "%s%s" % (CURRENCY, "{:,.2f}".format(float(price)))
 
 
-def detail_rows(store, item):
+def detail_rows(store, item, kinds=False):
     """``[(label, text)]`` for an item, in display order: its type, the
     filled-in fields of the type (then values that do not belong to the
-    type, if any), and notes last. Name, box and links are not included."""
-    rows = [("Type", store.item_type(item)["name"])]
+    type, if any), and notes last. Name, box and links are not included.
+    With ``kinds``, rows are ``(label, text, kind)``."""
+    rows = [("Type", store.item_type(item)["name"], "line")]
     notes = ""
     for key, label, kind, value in store.item_fields(item):
         if key == "notes":
@@ -40,15 +41,18 @@ def detail_rows(store, item):
             continue
         if key in ("name", "links"):
             continue
-        if kind == "price":
-            value = format_price(value)
+        if kind == "price" and value not in (None, ""):
+            try:
+                value = format_price(value)
+            except ValueError:  # (a value written before the field became a price)
+                value = str(value)
         elif value is not None:
             value = str(value)
         if value:
-            rows.append((label, value))
+            rows.append((label, value, kind))
     if notes:
-        rows.append(("Notes", notes))
-    return rows
+        rows.append(("Notes", notes, "text"))
+    return rows if kinds else [row[:2] for row in rows]
 
 
 def _export_base(store, name, obj_id):

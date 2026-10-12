@@ -11,7 +11,8 @@ from stuffapp.storage import STANDARD_KEYS, StorageError, Store, check_field_nam
 from .helpers import TempStoreTestCase
 
 BUNDLED_NAMES = ["Generic", "Book", "Furniture", "Device", "Gadget", "Media", "Plant",
-                 "Appliance", "Shoe", "Clothes", "Vehicle", "Card", "Key"]
+                 "Appliance", "Shoe", "Clothes", "Vehicle", "Card", "Key", "Sportsgear", "Vinyl",
+                 "DVD/BR", "USB/SD", "IoT", "Sub", "Fidelity", "DIY"]
 
 
 class BundledTypeTests(TempStoreTestCase):
@@ -187,8 +188,8 @@ class UserTypeTests(TempStoreTestCase):
 
     def test_change_type(self):
         item = self.store.create_item("Phone", self.box["id"], "device", brand="Acme", price="99",
-                                      extra={"Model": "X1", "Operating system": "OS"})
-        self.assertEqual(sorted(self.store.lost_on_type_change(item, "gadget")), ["Operating system"])
+                                      extra={"Model": "X1", "Current operating system": "OS"})
+        self.assertEqual(sorted(self.store.lost_on_type_change(item, "gadget")), ["Current operating system"])
         changed = self.store.change_item_type(item["id"], "gadget")
         self.assertEqual(changed["type"], "gadget")
         self.assertEqual(changed["extra"], {"Model": "X1"})

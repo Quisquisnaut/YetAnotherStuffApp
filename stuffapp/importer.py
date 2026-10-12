@@ -46,7 +46,8 @@ import re
 
 from .images import import_image_file
 from .itemtypes import GENERIC
-from .storage import EXTRA_PREFIX, FIELD_LABELS, LINE_FIELDS, STANDARD_KEYS, TEXT_FIELDS, StorageError
+from .storage import (EXTRA_PREFIX, FIELD_LABELS, LINE_FIELDS, STANDARD_KEYS, TEXT_FIELDS, StorageError,
+                      clean_field_value)
 
 KEY_ALIASES = {
     "name": "name",
@@ -132,13 +133,13 @@ def _split_values(text):
 def parse_item_text(text, extra_kinds=None):
     """Parse item text into a dict of raw field values.
 
-    ``extra_kinds`` (``{name: "line" | "text"}``) are the names of the item
+    ``extra_kinds`` (``{name: kind}``) are the names of the item
     types' own fields: lines starting with one of them go to
     ``fields["extra"]`` (``{name: value}``).
     """
     extra_kinds = extra_kinds or {}
     extra = dict((name.lower(), EXTRA_PREFIX + name) for name in extra_kinds)
-    one_line = set(_ONE_LINE_KEYS) | set(EXTRA_PREFIX + n for n, k in extra_kinds.items() if k == "line")
+    one_line = set(_ONE_LINE_KEYS) | set(EXTRA_PREFIX + n for n, k in extra_kinds.items() if k != "text")
     fields = {}
     current = None
     for raw_line in text.splitlines():
@@ -242,11 +243,13 @@ def suggested_type(store, path):
 
 
 def _fit_to_type(store, fields, item_type, warnings):
-    """Keep the values of the type's fields. Values of other fields are
-    added to the notes (if the type has notes) and reported."""
-    keys = dict((key.lower(), (key, label)) for key, label, _kind in item_type["fields"])
+    """Keep the values of the type's fields. Values of other fields, and
+    values that do not fit their field's kind (e.g. "lots" for a number),
+    are added to the notes (if the type has notes) and reported."""
+    keys = dict((key.lower(), (key, label, kind)) for key, label, kind in item_type["fields"])
     data = {"extra": {}}
     outside = []
+    bad = []  # (label, value, reason)
     for key in STANDARD_KEYS:
         value = fields.get(key)
         if value in (None, "", []):
@@ -266,18 +269,24 @@ def _fit_to_type(store, fields, item_type, warnings):
         if value in (None, ""):
             continue
         match = keys.get((EXTRA_PREFIX + str(name)).lower())
-        if match:
-            data["extra"][match[1]] = value
-        else:
+        if not match:
             outside.append((str(name), value))
-    if outside:
-        text = "\n".join("%s: %s" % (label, value) for label, value in outside)
-        names = ", ".join(label for label, _value in outside)
+            continue
+        try:
+            data["extra"][match[1]] = clean_field_value(match[2], value)
+        except StorageError as exc:
+            bad.append((match[1], value, str(exc)))
+    lost = outside + [(label, value) for label, value, _reason in bad]
+    if lost:
+        text = "\n".join("%s: %s" % (label, value) for label, value in lost)
         if "notes" in keys:
             data["notes"] = (str(data.get("notes") or "") + "\n\n" + text).strip()
-            warnings.append("Not fields of the type '%s', added to the notes: %s" % (item_type["name"], names))
-        else:
-            warnings.append("Not fields of the type '%s', not imported: %s" % (item_type["name"], names))
+        where = "added to the notes" if "notes" in keys else "not imported"
+        if outside:
+            warnings.append("Not fields of the type '%s', %s: %s" % (
+                item_type["name"], where, ", ".join(label for label, _value in outside)))
+        for label, value, reason in bad:
+            warnings.append("%s: '%s' is not valid (%s), %s." % (label, str(value)[:40], reason, where))
     return data
 
 

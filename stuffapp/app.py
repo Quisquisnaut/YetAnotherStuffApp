@@ -9,7 +9,8 @@ import os
 from . import backup, config, export, guide
 from .importer import import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
-from .storage import EXTRA_PREFIX, FIELD_LABELS, SORT_KEYS, StorageError
+from .storage import (EXTRA_KINDS, EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_KIND_NAMES, FIELD_LABELS, SORT_KEYS,
+                      StorageError)
 from .ui import Cancelled
 
 TRASH_DAYS = 30
@@ -36,15 +37,22 @@ def form_value(kind, value):
     return "" if value is None else str(value)
 
 
-KIND_NAMES = {"line": "one line", "text": "several lines", "links": "web links",
-              "price": "price in EUR", "year": "year"}
+KIND_NAMES = FIELD_KIND_NAMES
+# The kinds offered for a new field, in this order.
+KIND_CHOICES = [(kind, "%s%s" % (FIELD_KIND_NAMES[kind], " - %s" % FIELD_KIND_HINTS[kind]
+                                  if kind in FIELD_KIND_HINTS else "")) for kind in EXTRA_KINDS]
 
 
 def field_choice_label(choice):
-    """Text for one entry of the "add a field" list."""
-    key, label, kind = choice
-    return "%s (%s%s)" % (label, KIND_NAMES.get(kind, kind),
-                          "" if key.startswith(EXTRA_PREFIX) else ", standard")
+    """Text for one entry of the "add a field" list: "Color (Text, one line)"."""
+    _key, label, kind = choice
+    return "%s (%s)" % (label, KIND_NAMES.get(kind, kind))
+
+
+def field_form_label(label, kind):
+    """Label of a type's own field in a form, with a hint for its kind."""
+    hint = FIELD_KIND_HINTS.get(kind)
+    return "%s (%s)" % (label, hint) if hint else label
 
 
 def type_label(item_type, counts=None):
@@ -182,7 +190,8 @@ class App(object):
         main = [("name", "Name", item.get("name", ""))]
         more = []
         for key, label, kind, value in rows:
-            entry = (key, FORM_LABELS.get(key, label), form_value(kind, value))
+            shown = FORM_LABELS.get(key) or (field_form_label(label, kind) if key.startswith(EXTRA_PREFIX) else label)
+            entry = (key, shown, form_value(kind, value))
             (more if key in MORE_DETAILS else main).append(entry)
         data = self.ui.form(title, main)
         if more and self.ui.confirm("More details (%s)?" % ", ".join(FIELD_LABELS.get(k, k) for k, _l, _v in more)):
@@ -407,7 +416,7 @@ class App(object):
             actions = [
                 ("Add a field", self.add_field),
                 ("Remove a field", self.remove_field),
-                ("Change a field (move, rename, one line / several lines)", self.change_field),
+                ("Change a field (move, rename, change kind)", self.change_field),
                 ("Rename type", self.rename_type),
                 ("Make a copy", lambda t: self.create_type(based_on=t)),
             ]
@@ -427,20 +436,39 @@ class App(object):
         self.store.rename_type(type_id, name)
 
     def add_field(self, type_id):
-        """Pick a field from the list (standard fields and the fields of all
-        types) or "New field..." to make a new one."""
-        choices = self.store.field_choices(type_id)
-        index = self.ui.choose("Add which field?", ["New field..."] + [field_choice_label(c) for c in choices])
+        """Search, then pick a ready-made field from the grouped list, or
+        "New field..." to make one (kind and name)."""
+        search = self.ui.form("Add a field", [("search", "Search fields (Enter = show all)", "")])["search"]
+        groups = self.store.field_groups(type_id, search)
+        if not groups:
+            self.ui.message("No field matches '%s'." % search)
+        options = [("", ["New field..."])] + [(group, [field_choice_label(f) for f in fields])
+                                              for group, fields in groups]
+        index = self.ui.choose_grouped("Add which field?", options)
         if index is None:
             return
         if index:
-            key, label, kind = choices[index - 1]
+            key, _label, kind = [f for _g, fields in groups for f in fields][index - 1]
             self.store.add_type_field(type_id, key, kind)
             return
-        name = self.ui.form("New field", [("name", "Field name (e.g. Players, Warranty until)", "")])["name"]
-        kind = self.ui.choose("Kind of field", ["One line", "Several lines"])
-        if kind is not None:
-            self.store.add_type_field(type_id, name, "text" if kind else "line")
+        kind = self.ui.choose("Kind of the new field", [text for _kind, text in KIND_CHOICES])
+        if kind is None:
+            return
+        name = self.ui.form("New field", [("name", "Label (e.g. Players, Storage (GB))", "")])["name"]
+        self.store.add_type_field(type_id, name, KIND_CHOICES[kind][0])
+
+    def _change_kind(self, type_id, key, label, kind):
+        index = self.ui.choose("Kind of '%s' (now: %s)" % (label, KIND_NAMES.get(kind, kind)),
+                               [text for _kind, text in KIND_CHOICES])
+        if index is None:
+            return
+        new_kind = KIND_CHOICES[index][0]
+        misfits = self.store.type_field_misfits(type_id, key, new_kind)
+        if misfits and not self.ui.confirm(
+                "%d item(s) have a value that is not a valid %s; it is kept as it is until you change it. "
+                "Continue?" % (misfits, KIND_NAMES[new_kind])):
+            return
+        self.store.set_type_field_kind(type_id, key, new_kind)
 
     def remove_field(self, type_id):
         fields = self.store.get_type(type_id)["fields"]
@@ -471,7 +499,7 @@ class App(object):
         own = key.startswith(EXTRA_PREFIX)
         actions = ["Move up", "Move down", "Remove"]
         if own:
-            actions += ["Rename", "Make it %s" % ("several lines" if kind == "line" else "one line")]
+            actions += ["Rename", "Change kind (now: %s)" % KIND_NAMES.get(kind, kind)]
         action = self.ui.choose("Field '%s'" % label, actions)
         if action in (0, 1):
             self.store.move_type_field(type_id, key, -1 if action == 0 else 1)
@@ -481,7 +509,7 @@ class App(object):
             name = self.ui.form("Rename field", [("name", "New name (values are kept)", label)])["name"]
             self.store.rename_type_field(type_id, key, name)
         elif action == 4:
-            self.store.set_type_field_kind(type_id, key, "text" if kind == "line" else "line")
+            self._change_kind(type_id, key, label, kind)
 
     def reset_type(self, type_id):
         item_type = self.store.get_type(type_id)

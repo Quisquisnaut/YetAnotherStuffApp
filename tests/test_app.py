@@ -3,6 +3,7 @@ import unittest
 from stuffapp import guide
 from stuffapp.app import App
 from stuffapp.ui import ConsoleUI
+from stuffapp.storage import StorageError
 
 from .helpers import TINY_JPEG, TempStoreTestCase
 
@@ -148,7 +149,7 @@ class ScriptedApp(TempStoreTestCase):
     def test_change_type_asks_before_deleting_values(self):
         box = self.store.create_box("Kitchen")
         item = self.store.create_item("Phone", box["id"], "device", brand="Acme",
-                                      extra={"Operating system": "OS"})
+                                      extra={"Current operating system": "OS"})
         # Item menu > Change type > Gadget (5); answer "n" then "y".
         self.run_app(["1", "1", "1", "1", "4", "5", "n", "0", "0", "0"])
         self.assertEqual(self.store.get_item(item["id"])["type"], "device")
@@ -158,24 +159,34 @@ class ScriptedApp(TempStoreTestCase):
 
     def test_types_menu(self):
         box = self.store.create_box("Shelf")
-        # Type Editor: create "Game" from no fields, Add a field > New field "Players",
-        # then pick fields from the list: Description (standard) and Color (a field of other types).
-        self.run_app(["12", "1", "Game", "1", "1", "1", "Players", "1", "1", "2", "0", "0", "0"])
+        # Type Editor: create "Game" from no fields; Add a field > (no search) > New field, kind
+        # Number (3), label "Players"; then Add a field > Description (the first standard field).
+        self.run_app(["12", "1", "Game", "1", "1", "", "1", "3", "Players", "1", "", "2", "0", "0", "0"])
         game = self.store.find_type("game")
-        self.assertEqual([k for k, _l, _k in game["fields"]], ["extra:Players", "description"])
-        color = [c[0] for c in self.store.field_choices(game["id"])].index("extra:Color") + 2
-        self.run_app(["12", "15", "1", str(color), "0", "0", "0"])
-        self.assertIn("Color (one line)", self.text())
+        self.assertEqual(game["fields"], [("extra:Players", "Players", "number"),
+                                          ("description", "Description", "text")])
+        self.assertIn("-- Standard details --", self.text())
+        self.assertIn("-- Electronics & IT --", self.text())
+        # Searching "gb" lists only RAM (GB) and Storage (GB); "color" finds Color first.
+        self.run_app(["12", "23", "1", "gb", "3", "1", "color", "2", "0", "0", "0"])
+        self.assertIn("RAM (GB) (Number)", self.text())
+        self.assertNotIn("Author", self.text())
         self.assertEqual([k for k, _l, _k in self.store.get_type(game["id"])["fields"]],
-                         ["extra:Players", "description", "extra:Color"])
-        self.run_app(["12", "15", "2", "3", "y", "0", "0", "0"])  # Remove a field > Color
+                         ["extra:Players", "description", "extra:Storage (GB)", "extra:Color"])
+        self.run_app(["12", "23", "2", "4", "y", "2", "3", "y", "0", "0", "0"])  # Remove Color, Storage
         game = self.store.find_type("game")
         item = self.store.create_item("Chess", box["id"], game["id"], extra={"Players": "2"})
+        with self.assertRaises(StorageError):
+            self.store.create_item("Go", box["id"], game["id"], extra={"Players": "two"})
+        # Change kind to Yes / No: one value does not fit, so it asks first ("n" keeps Number).
+        self.run_app(["12", "23", "3", "1", "5", "4", "n", "0", "0", "0"])
+        self.assertEqual(self.store.type_field_misfits(game["id"], "extra:Players", "yesno"), 1)
+        self.assertEqual(self.store.find_type("game")["fields"][0][2], "number")
         # Rename the field (Change a field > Players > Rename); values are kept.
-        self.run_app(["12", "15", "3", "1", "4", "Gamers", "0", "0", "0"])
+        self.run_app(["12", "23", "3", "1", "4", "Gamers", "0", "0", "0"])
         self.assertEqual(self.store.get_item(item["id"])["extra"], {"Gamers": "2"})
         # Removing a field with values asks first; a used type cannot be deleted.
-        self.run_app(["12", "15", "2", "1", "n", "3", "1", "3", "y", "6", "0", "0", "0"])
+        self.run_app(["12", "23", "2", "1", "n", "3", "1", "3", "y", "6", "0", "0", "0"])
         self.assertEqual(self.store.get_item(item["id"])["extra"], {})
         self.assertIn("Give them another type first", self.text())
         self.assertTrue(self.store.type_exists(game["id"]))
