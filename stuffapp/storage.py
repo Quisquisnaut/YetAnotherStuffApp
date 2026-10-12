@@ -56,6 +56,8 @@ ITEM_FIELD_SPECS = (
     ("notes", "Notes", "text"),
 )
 TEXT_FIELDS = tuple(key for key, _label, kind in ITEM_FIELD_SPECS if kind in ("line", "text") and key != "name")
+# The single-line ones (newlines become spaces).
+LINE_FIELDS = tuple(key for key, _label, kind in ITEM_FIELD_SPECS if kind == "line" and key != "name")
 FIELD_LABELS = dict((key, label) for key, label, _kind in ITEM_FIELD_SPECS)
 
 # ``custom`` holds the values of the user's own fields: {field name: text}.
@@ -140,7 +142,7 @@ def _clean_custom(values):
         return result
     for name, value in values.items():
         name = _one_line(name) if isinstance(name, str) else ""
-        value = _clean_str(value) if isinstance(value, (str, int, float)) and not isinstance(value, bool) else ""
+        value = _one_line(value) if isinstance(value, (str, int, float)) and not isinstance(value, bool) else ""
         if name and value and len(name) <= MAX_FIELD_NAME:
             result[name] = value
     return result
@@ -151,7 +153,8 @@ def _clean_names(names):
     for name in names if isinstance(names, list) else []:
         if isinstance(name, str):
             name = _one_line(name)
-            if name and len(name) <= MAX_FIELD_NAME and name.lower() not in [n.lower() for n in result]:
+            if name and len(name) <= MAX_FIELD_NAME and _FIELD_NAME_RE.match(name) and \
+                    name.lower() not in [n.lower() for n in result]:
                 result.append(name)
     return result
 
@@ -509,7 +512,7 @@ class Store(object):
     def _normalize_item(data):
         item = {"name": _one_line(data.get("name"))}
         for key in TEXT_FIELDS:
-            item[key] = _clean_str(data.get(key))
+            item[key] = _one_line(data.get(key)) if key in LINE_FIELDS else _clean_str(data.get(key))
         item["links"] = _clean_links(data.get("links"))
         item["price"] = parse_price(data.get("price"))
         item["year_acquired"] = parse_year(data.get("year_acquired"))
@@ -565,6 +568,8 @@ class Store(object):
             if not isinstance(changes["custom"], dict):
                 raise StorageError("Custom fields must be given as {name: value}.")
             for name, value in changes["custom"].items():
+                for key in [k for k in custom if k.lower() == str(name).lower()]:
+                    del custom[key]  # same field written with another case
                 custom[name] = value
             merged["custom"] = custom
         normalized = self._normalize_item(merged)
@@ -670,6 +675,14 @@ class Store(object):
         return self.general_fields(), self._save_general_fields, self.list_items()
 
     @staticmethod
+    def _value_key(item, name):
+        """The key of ``item["custom"]`` holding field ``name`` (any case)."""
+        for key in item.get("custom") or {}:
+            if key.lower() == name.lower():
+                return key
+        return None
+
+    @staticmethod
     def _index(names, name):
         for index, existing in enumerate(names):
             if existing.lower() == name.lower():
@@ -701,19 +714,21 @@ class Store(object):
             raise StorageError("There is already a field '%s'." % new)
         if box_id and self._index(self.general_fields(), new) >= 0:
             raise StorageError("'%s' is already a field of all items." % new)
+        changes = []
         for item in items:
-            custom = item.get("custom") or {}
-            if old in custom and new != old:
-                if new in custom:
-                    raise StorageError("Item '%s' already has a value for '%s'." % (item["name"], new))
+            key = self._value_key(item, old)
+            if key is None or key == new:
+                continue
+            other = self._value_key(item, new)
+            if other is not None and other != key:
+                raise StorageError("Item '%s' already has a value for '%s'." % (item["name"], new))
+            changes.append((item, key))
         names[index] = new
         save(names)
-        for item in items:
-            custom = item.get("custom") or {}
-            if old in custom and new != old:
-                item["custom"] = dict((new if k == old else k, v) for k, v in custom.items())
-                item["modified"] = _now()
-                self._write(self._item_path(item["id"]), item)
+        for item, key in changes:
+            item["custom"] = dict((new if k == key else k, v) for k, v in item["custom"].items())
+            item["modified"] = _now()
+            self._write(self._item_path(item["id"]), item)
         return new
 
     def field_value_count(self, name, box_id=None):
@@ -729,7 +744,7 @@ class Store(object):
         general = [n.lower() for n in self.general_fields()] if box_id else []
         result = []
         for item in items:
-            if name in (item.get("custom") or {}):
+            if self._value_key(item, name) is not None:
                 if box_id and name.lower() in general:
                     continue  # still a field of all items
                 if not box_id and item.get("box") and self.box_exists(item["box"]) and \
@@ -750,7 +765,7 @@ class Store(object):
         del names[index]
         save(names)
         for item in losing:
-            item["custom"].pop(name, None)
+            item["custom"].pop(self._value_key(item, name), None)
             item["modified"] = _now()
             self._write(self._item_path(item["id"]), item)
         return len(losing)

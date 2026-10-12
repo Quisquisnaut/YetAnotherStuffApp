@@ -41,7 +41,7 @@ import os
 import re
 
 from .images import import_image_file
-from .storage import TEXT_FIELDS, StorageError
+from .storage import LINE_FIELDS, TEXT_FIELDS, StorageError
 
 KEY_ALIASES = {
     "name": "name",
@@ -163,6 +163,12 @@ def parse_item_text(text, custom_names=()):
         elif current == "name":
             if line.strip():
                 current = None
+        elif (current in LINE_FIELDS or current.startswith("custom:")) and fields[current]:
+            # Single-line details: an extra line is a note, not part of
+            # e.g. the serial number.
+            if line.strip():
+                current = "notes"
+                fields["notes"] = (fields.get("notes", "") + "\n" + line.strip()).strip()
         else:
             fields[current] = (fields[current] + "\n" + line.strip()) if fields[current] else line.strip()
     for key in list(fields):
