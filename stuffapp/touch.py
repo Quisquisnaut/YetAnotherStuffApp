@@ -26,7 +26,7 @@ from . import __version__, backup, config, export, guide
 from .app import TRASH_DAYS, describe_filters, startup
 from .images import pil_to_jpeg_bytes, to_jpeg_bytes
 from .importer import import_item_file, suggested_box
-from .storage import SORT_KEYS, Store, StorageError
+from .storage import SORT_KEYS, Store, StorageError, is_safe_link
 from .ui import IMAGE_FILE_EXTS, TEXT_FILE_EXTS, find_files
 
 try:
@@ -429,7 +429,12 @@ class ItemScreen(Screen):
         console.quicklook(paths[index:] + paths[:index])
 
     def on_link(self, link, sender):
-        webbrowser.open(link)
+        if ":" not in link:
+            link = "https://" + link  # "example.com/manual"
+        if is_safe_link(link):
+            webbrowser.open(link)
+        else:
+            console.hud_alert("Only http(s) and mailto links can be opened", "error")
 
     def on_edit(self, sender):
         if not self.gone:

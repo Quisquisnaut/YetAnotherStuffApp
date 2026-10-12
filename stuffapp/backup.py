@@ -11,6 +11,7 @@ data as a new backup, then swaps the data in, so a restore can be undone.
 
 import json
 import os
+import re
 import shutil
 import tempfile
 import zipfile
@@ -21,6 +22,10 @@ from .storage import StorageError
 MAX_BACKUPS = 15
 CONTENT_DIRS = ("boxes", "items", "images")
 PREFIX = "stuff-backup-"
+MAX_FILES = 200000
+MAX_TOTAL_BYTES = 8 * 1024 * 1024 * 1024  # protects against "zip bombs"
+MAX_JSON_BYTES = 5 * 1024 * 1024
+_PART_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,99}$")
 
 
 def _iter_files(store):
@@ -100,16 +105,25 @@ def auto_backup(store, every_hours=24):
 
 
 def _safe_members(archive):
+    """Names of the data files in a backup zip. Refuses anything that could
+    be written outside the data folder or is unreasonably large."""
     names = []
+    total = 0
     for info in archive.infolist():
         name = info.filename
         if name == "stuffapp-backup.json" or name.endswith("/"):
             continue
         parts = name.split("/")
-        if (name.startswith("/") or "\\" in name or ":" in name or ".." in parts
-                or parts[0] not in CONTENT_DIRS or len(parts) < 2):
+        expected_depth = 3 if parts[0] == "images" else 2
+        if (parts[0] not in CONTENT_DIRS or len(parts) != expected_depth
+                or not all(_PART_RE.match(part) for part in parts[1:])):
             raise StorageError("The backup contains an unexpected file: %s" % name)
+        if name.endswith(".json") and info.file_size > MAX_JSON_BYTES:
+            raise StorageError("The backup contains a file that is too large: %s" % name)
+        total += info.file_size
         names.append(name)
+    if len(names) > MAX_FILES or total > MAX_TOTAL_BYTES:
+        raise StorageError("The backup is too large.")
     return names
 
 
@@ -157,19 +171,37 @@ def restore_backup(store, path):
                     shutil.copyfileobj(src, dst)
         # Only now (the backup may be pruned) save the current data.
         safety = create_backup(store, "before-restore")
+        _swap_in(store.root, staging)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return safety
+
+
+def _swap_in(root, staging):
+    """Replace ``root/<dir>`` with ``staging/<dir>`` for every content dir.
+    If anything fails, the original folders are put back."""
+    moved = []  # content dirs whose original is now in staging/<dir>.old
+    try:
         for sub in CONTENT_DIRS:
-            current = os.path.join(store.root, sub)
+            current = os.path.join(root, sub)
             old = os.path.join(staging, sub + ".old")
             if os.path.isdir(current):
                 os.rename(current, old)
+            moved.append(sub)
             new = os.path.join(staging, sub)
             if os.path.isdir(new):
                 os.rename(new, current)
             else:
                 os.makedirs(current)
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
-    return safety
+    except Exception:
+        for sub in moved:
+            current = os.path.join(root, sub)
+            old = os.path.join(staging, sub + ".old")
+            if os.path.isdir(old):
+                if os.path.isdir(current):
+                    shutil.rmtree(current)
+                os.rename(old, current)
+        raise
 
 
 def import_backup_file(store, path):

@@ -45,7 +45,9 @@ SORT_KEYS = ("name", "price", "newest", "box")
 # Box that receives items whose box is missing (old data, damaged files).
 UNSORTED_LABEL = "Unsorted"
 
-_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_TRASH_RE = re.compile(r"^[0-9]{8}-[0-9]{6}_(box|item)_[A-Za-z0-9_-]{1,64}(-[0-9]+)?$")
+MAX_PRICE = 1e12
 
 
 class StorageError(Exception):
@@ -72,6 +74,20 @@ def _clean_str(value):
     return str(value).strip()
 
 
+def _one_line(value):
+    """Names and labels are single lines (they become titles in exports)."""
+    return " ".join(_clean_str(value).split())
+
+
+SAFE_LINK_SCHEMES = ("http://", "https://", "mailto:")
+
+
+def is_safe_link(link):
+    """Only web and mail links may be opened (no javascript:, file:, or
+    app URL schemes such as pythonista:// that could run code)."""
+    return str(link).strip().lower().startswith(SAFE_LINK_SCHEMES)
+
+
 def _clean_links(links):
     if not links:
         return []
@@ -92,7 +108,7 @@ def parse_price(value):
     if isinstance(value, bool):
         raise StorageError("Invalid price: %r" % (value,))
     if isinstance(value, (int, float)):
-        return float(value)
+        return _check_price(float(value), value)
     text = str(value).strip()
     match = re.search(r"-?\d[\d.,' ]*", text)
     if not match:
@@ -112,9 +128,18 @@ def parse_price(value):
                 else:
                     number = number.replace(sep, ".")
     try:
-        return float(number)
+        price = float(number)
     except ValueError:
         raise StorageError("Invalid price: %r" % (value,))
+    return _check_price(price, value)
+
+
+def _check_price(price, original):
+    if price != price or price in (float("inf"), float("-inf")) or abs(price) > MAX_PRICE:
+        raise StorageError("Invalid price: %r" % (original,))
+    if price < 0:
+        raise StorageError("A price cannot be negative: %r" % (original,))
+    return round(price, 2)
 
 
 def is_jpeg(path):
@@ -165,14 +190,45 @@ class Store(object):
             raise ValueError("unexpected content")
         return data
 
+    def _load_object(self, path, source=None):
+        """Load a box/item file and check it (the data folder may be synced
+        or edited by hand, so it is not trusted blindly)."""
+        data = self._load_json(source or path)
+        stem = os.path.basename(path)[:-len(".json")]
+        if data.get("id") != stem or not _ID_RE.match(stem):
+            raise ValueError("id does not match the file name")
+        if os.path.dirname(path) == self.items_dir:
+            for key in ("description", "location", "origin", "notes"):
+                data[key] = _clean_str(data.get(key))
+            data["name"] = _one_line(data.get("name")) or "(no name)"
+            data["links"] = _clean_links(data.get("links") if isinstance(data.get("links"), (list, str)) else None)
+            try:
+                data["price"] = parse_price(data.get("price"))
+            except StorageError:
+                data["price"] = None
+            images = data.get("images") if isinstance(data.get("images"), list) else []
+            clean = []
+            for name in images:
+                if isinstance(name, str) and os.path.basename(name) == name and \
+                        name.lower().endswith((".jpg", ".jpeg")) and not name.startswith("."):
+                    if name not in clean:
+                        clean.append(name)
+            data["images"] = clean
+            if not isinstance(data.get("box"), str) or not _ID_RE.match(data["box"]):
+                data["box"] = None
+        else:
+            data["label"] = _one_line(data.get("label")) or "(no label)"
+            data["description"] = _clean_str(data.get("description"))
+        return data
+
     def _read(self, path):
         """Read a JSON file, repairing it from ``.bak`` if it is damaged."""
         try:
-            return self._load_json(path)
+            return self._load_object(path)
         except (ValueError, UnicodeDecodeError) as first_error:
             backup = path + ".bak"
             try:
-                data = self._load_json(backup)
+                data = self._load_object(path, backup)
             except (OSError, ValueError, UnicodeDecodeError):
                 raise StorageError("Damaged file %s (%s)" % (os.path.basename(path), first_error))
             shutil.copyfile(backup, path)
@@ -271,7 +327,7 @@ class Store(object):
 
     # --------------------------------------------------------------- boxes
     def create_box(self, label, description=""):
-        label = _clean_str(label)
+        label = _one_line(label)
         if not label:
             raise StorageError("A box needs a label.")
         box = {
@@ -305,7 +361,7 @@ class Store(object):
         for key, value in changes.items():
             if key not in ("label", "description"):
                 raise StorageError("Unknown box field: %s" % key)
-            value = _clean_str(value)
+            value = _one_line(value) if key == "label" else _clean_str(value)
             if key == "label" and not value:
                 raise StorageError("A box needs a label.")
             box[key] = value
@@ -362,7 +418,7 @@ class Store(object):
     @staticmethod
     def _normalize_item(data):
         return {
-            "name": _clean_str(data.get("name")),
+            "name": _one_line(data.get("name")),
             "description": _clean_str(data.get("description")),
             "location": _clean_str(data.get("location")),
             "links": _clean_links(data.get("links")),
@@ -428,6 +484,7 @@ class Store(object):
             target_dir = self.item_image_dir(clone["id"])
             os.makedirs(target_dir)
             for filename in item["images"]:
+                filename = os.path.basename(filename)
                 src = os.path.join(source_dir, filename)
                 if os.path.isfile(src):
                     shutil.copyfile(src, os.path.join(target_dir, filename))
@@ -464,7 +521,7 @@ class Store(object):
             "id": obj_id, "kind": kind, "name": name, "box": box_id, "deleted": _now()})
 
     def _trash_entry_path(self, entry_id):
-        if not isinstance(entry_id, str) or not _ID_RE.match(entry_id):
+        if not isinstance(entry_id, str) or not _TRASH_RE.match(entry_id):
             raise StorageError("Invalid trash entry: %r" % (entry_id,))
         path = os.path.join(self.trash_dir, entry_id)
         if not os.path.isdir(path):
@@ -477,10 +534,16 @@ class Store(object):
         entries = []
         for name in sorted(os.listdir(self.trash_dir), reverse=True):
             folder = os.path.join(self.trash_dir, name)
+            if not _TRASH_RE.match(name):
+                continue
             try:
                 meta = self._load_json(os.path.join(folder, "meta.json"))
             except (OSError, ValueError, UnicodeDecodeError):
                 continue
+            if meta.get("kind") not in ("box", "item"):
+                continue
+            meta["name"] = _clean_str(meta.get("name")) or "?"
+            meta["deleted"] = _clean_str(meta.get("deleted"))
             meta["entry"] = name
             entries.append(meta)
         return entries

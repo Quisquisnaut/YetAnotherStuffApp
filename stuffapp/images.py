@@ -7,6 +7,7 @@ rotated in PDF exports. Without PIL, JPEG files are stored as they are.
 """
 
 import io
+import os
 
 from .storage import JPEG_MAGIC, StorageError
 
@@ -16,10 +17,13 @@ except ImportError:  # pragma: no cover
     Image = ImageOps = None
 
 MAX_SIDE = 2048
+MAX_IMAGE_BYTES = 40 * 1024 * 1024
 
 
 def to_jpeg_bytes(data):
     """Return JPEG bytes for image ``data`` (bytes)."""
+    if len(data) > MAX_IMAGE_BYTES:
+        raise StorageError("Image too large (max %d MB)." % (MAX_IMAGE_BYTES // (1024 * 1024)))
     if Image is None:
         if data.startswith(JPEG_MAGIC):
             return data
@@ -64,6 +68,8 @@ def pil_to_jpeg_bytes(img):
 
 def import_image_file(store, item_id, path):
     """Attach the image at ``path`` to an item, converting it if needed."""
+    if os.path.getsize(path) > MAX_IMAGE_BYTES:
+        raise StorageError("Image too large (max %d MB)." % (MAX_IMAGE_BYTES // (1024 * 1024)))
     with open(path, "rb") as fh:
         data = fh.read()
     return store.add_image_bytes(item_id, to_jpeg_bytes(data), name=path)

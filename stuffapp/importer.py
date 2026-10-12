@@ -123,9 +123,17 @@ def parse_item_text(text):
     return fields
 
 
+MAX_ITEM_FILE_BYTES = 1024 * 1024
+
+
 def parse_item_file(path):
-    with open(path, "r", encoding="utf-8-sig") as fh:
-        text = fh.read()
+    if os.path.getsize(path) > MAX_ITEM_FILE_BYTES:
+        raise StorageError("The file is too large for an item (max 1 MB).")
+    try:
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            text = fh.read()
+    except UnicodeDecodeError:
+        raise StorageError("The file is not UTF-8 text.")
     if path.lower().endswith(".json"):
         try:
             data = json.loads(text)
@@ -173,7 +181,18 @@ def import_item_file(store, path, box_id=None):
         if re.match(r"^[a-z]+://", image):
             warnings.append("Skipped remote image %s" % image)
             continue
-        image_path = os.path.join(base_dir, image)
+        parts = image.replace("\\", "/").split("/")
+        if (":" in image or image.startswith(("/", "\\")) or os.path.isabs(image)
+                or any(part in ("", ".", "..") for part in parts)):
+            # Checked before touching the file system: no absolute, drive,
+            # UNC (\\server\share, which leaks credentials on Windows) or
+            # parent-folder paths.
+            warnings.append("Skipped %s: images must be in the folder of the item file" % image)
+            continue
+        image_path = os.path.realpath(os.path.join(base_dir, *parts))
+        if not image_path.startswith(os.path.realpath(base_dir) + os.sep):
+            warnings.append("Skipped %s: images must be in the folder of the item file" % image)
+            continue
         if not os.path.isfile(image_path):
             warnings.append("Image not found: %s" % image)
             continue
