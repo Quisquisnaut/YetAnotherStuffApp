@@ -56,7 +56,9 @@ English guides to every feature.
     Blu-rays), **USB/SD** (USB sticks and memory cards), **IoT** (smart-home and IoT
     devices), **Sub** (subscriptions: payment amount, billing period, next payment,
     expiration date, auto-renew...), **Fidelity** (store and supermarket loyalty cards)
-    and **DIY** (hammers, screwdrivers, power tools...). Each has the useful standard
+    **DIY** (hammers, screwdrivers, power tools...) and **Document** (receipts,
+    prescriptions, tax forms... on paper and/or electronic: kind, issuer, date, amount,
+    tax year, keep until, where the paper and the file are). Each has the useful standard
     details plus its own fields (see "Fields of the bundled types" below).
   - **Every field has a kind and a label.** Kinds: Text (one line), Text (several
     lines), Number, Yes / No, Date, Year, Price (€) and Web link. Values are checked
@@ -67,7 +69,7 @@ English guides to every feature.
     **grouped**: standard details, ready-made fields (General, Electronics & IT — Storage
     (GB), RAM (GB), Display resolution, Screen size, Wi-Fi, Mobile data, Bluetooth, Ports,
     original/current OS, OS and firmware version, bundled software, IP/MAC address... —
-    Books & media, Sports & hobbies, Tools & DIY, Subscriptions, Clothes & shoes,
+    Books & media, Sports & hobbies, Tools & DIY, Subscriptions, Documents, Clothes & shoes,
     Furniture & home, Plants, Vehicles, Cards & keys) and the fields of your own types;
     or **New field…** (choose its kind, then its label). **Remove a field**; move or
     rename fields or change their kind; rename the type, make a
@@ -78,6 +80,9 @@ English guides to every feature.
     first and tells you which values will be deleted.
   - The Card type is meant for ID, bank or membership cards: never store PINs,
     passwords or full card numbers, only the last digits.
+  - The Document type keeps track of documents: for an electronic one, write where the
+    file is in "File location" or attach a photo/scan. Data is saved as plain JSON files,
+    so don't store passwords or other secrets in it.
 * **Clone Item**: duplicates an item, photos included, with a new internal ID
   (for when you own two of the same thing).
 * **Add Stuff to Box**: moves an item into another box.
@@ -122,6 +127,7 @@ As they come with the app (you can change them):
 | Sub | Description, Provider, Plan, Customer number, Payment amount, Billing period, Next payment, Payment method, Start date, Expiration date, Auto-renew, Cancellation notice, Used by, Web links, Issues, Notes |
 | Fidelity | Description, Location, Store / chain, Holder, Member number, Points, Points expire, Valid until, App, Web links, Year of acquisition, Issues, Notes |
 | DIY | Description, Location, Tool kind, Brand, Maker, Model, Power source, Power (W), Voltage (V), Battery, Size, Bits / blades, Accessories, Spare parts, Last service, Lent to, Product code, Serial number, Warranty until, Made in, Web links, Paid price, Origin, Seller, Year of acquisition, Issues, Notes |
+| Document | Description, Location, Document kind, Issuer, Holder, Document number, Document date, Amount, Tax year, Related to, Valid until, Keep until, Paper copy, Electronic copy, File location, Web links, Issues, Notes |
 
 ## Item text file format
 

@@ -12,7 +12,7 @@ from .helpers import TempStoreTestCase
 
 BUNDLED_NAMES = ["Generic", "Book", "Furniture", "Device", "Gadget", "Media", "Plant",
                  "Appliance", "Shoe", "Clothes", "Vehicle", "Card", "Key", "Sportsgear", "Vinyl",
-                 "DVD/BR", "USB/SD", "IoT", "Sub", "Fidelity", "DIY"]
+                 "DVD/BR", "USB/SD", "IoT", "Sub", "Fidelity", "DIY", "Document"]
 
 
 class BundledTypeTests(TempStoreTestCase):

@@ -83,7 +83,8 @@ type. These types come with the app (their fields are listed in the guide
   Clothes, Vehicle, Card, Key, Sportsgear, Vinyl (records), DVD/BR (DVDs
   and Blu-rays), USB/SD (USB sticks and memory cards), IoT (smart-home
   devices), Sub (subscriptions: payment amount, next payment, expiration
-  date...), Fidelity (store loyalty cards), DIY (tools): the useful
+  date...), Fidelity (store loyalty cards), DIY (tools), Document
+  (receipts, prescriptions, tax forms..., on paper or electronic): the useful
   standard details plus their own
   fields, e.g. Author, Publisher, Year published, Location and Bookshelf
   for a Book, Color and Size for Furniture, Storage (GB), RAM (GB),

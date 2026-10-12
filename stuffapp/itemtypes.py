@@ -77,6 +77,11 @@ PRESET_FIELDS = [
         ("Payment method", "line"), ("Start date", "date"), ("Auto-renew", "yesno"),
         ("Cancellation notice", "line"),
     ]),
+    ("Documents", [
+        ("Document kind", "line"), ("Document number", "line"), ("Document date", "date"),
+        ("Amount", "price"), ("Tax year", "year"), ("Related to", "line"), ("Paper copy", "yesno"),
+        ("Electronic copy", "yesno"), ("File location", "line"), ("Keep until", "date"),
+    ]),
     ("Clothes & shoes", [
         ("Garment", "line"), ("Width", "line"), ("Style", "line"), ("Season", "line"),
         ("Care instructions", "text"),
@@ -190,6 +195,10 @@ BUNDLED_TYPES = [
                     _f("Power source"), _f("Power (W)"), _f("Voltage (V)"), _f("Battery"), _f("Size"),
                     _f("Bits / blades"), _f("Accessories"), _f("Spare parts"), _f("Last service"),
                     _f("Lent to"), "product_code", "serial_number", _f("Warranty until"), "made_in"] + _END),
+    ("document", "Document", ["description", "location", _f("Document kind"), _f("Issuer"), _f("Holder"),
+                              _f("Document number"), _f("Document date"), _f("Amount"), _f("Tax year"),
+                              _f("Related to"), _f("Valid until"), _f("Keep until"), _f("Paper copy"),
+                              _f("Electronic copy"), _f("File location"), "links", "issues", "notes"]),
 ]
 
 BUNDLED_IDS = tuple(type_id for type_id, _name, _fields in BUNDLED_TYPES)

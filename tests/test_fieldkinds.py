@@ -75,6 +75,9 @@ class PresetFieldTests(TempStoreTestCase):
                              ("Expiration date", "date"), ("Auto-renew", "yesno")],
             "fidelity": [("Store / chain", "line"), ("Points", "number"), ("Points expire", "date")],
             "diy": [("Tool kind", "line"), ("Voltage (V)", "number"), ("Power source", "line")],
+            "document": [("Document kind", "line"), ("Document date", "date"), ("Amount", "price"),
+                         ("Tax year", "year"), ("Paper copy", "yesno"), ("Electronic copy", "yesno"),
+                         ("Keep until", "date")],
         }
         for type_id, fields in wanted.items():
             for label, kind in fields:
