@@ -19,6 +19,9 @@ Options:
 - `--data FOLDER` chooses where to keep the data. The `STUFFAPP_DATA` environment variable does the same.
 - `--console` uses the text menus even in Pythonista.
 
+Text menus use terminal colors when output goes to a terminal. Set `NO_COLOR`
+to disable them.
+
 Optional: if Pillow (`PIL`) is installed (Pythonista already includes it), the app
 converts PNG/HEIC photos to JPEG and turns them the right way up.
 Without Pillow, you can only import JPEG files.
