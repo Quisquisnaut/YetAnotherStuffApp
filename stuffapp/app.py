@@ -795,8 +795,16 @@ class App(object):
         current = self.store.root
         index = self.ui.choose("Data folder: %s" % current,
                                ["Use another folder (e.g. a synced cloud folder)...",
-                                "Use the default folder next to the app"])
+                                "Use the default folder next to the app",
+                                "Reset this data folder"])
         if index is None:
+            return
+        if index == 2:
+            if not self.ui.confirm(
+                    "Reset ALL data in %s? Boxes, items, photos, custom types, trash and exports will be deleted. "
+                    "A backup will be saved first and kept in the Backups folder." % current):
+                return
+            self.reset_data()
             return
         if index == 0:
             folder = self.ui.ask_path("New data folder")
@@ -806,6 +814,17 @@ class App(object):
         else:
             folder = config.local_data_dir()
         self.switch_data_dir(folder, remember=index == 0)
+
+    def reset_data(self):
+        from .storage import Store
+
+        root = self.store.root
+        safety = backup.reset_data(self.store)
+        self.store = Store(root)
+        self.ui.skip = hidden_dirs(self.store)
+        self.filters = {}
+        self.ui.message("Data folder reset. Previous boxes, items and types are in backup %s."
+                        % os.path.basename(safety))
 
     def switch_data_dir(self, folder, remember=True):
         from .storage import Store

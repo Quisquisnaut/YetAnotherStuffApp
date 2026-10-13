@@ -236,6 +236,9 @@ values of the type's own fields in `"extra"` (`{"Author": "..."}`).
   all boxes, items, images and item types, and keeps the last 15. You can also make a backup
   yourself, or restore one from the list or from any zip file. Before a restore,
   the current data is saved as a `before-restore` backup.
+  Settings also has **Reset this data folder**: it first saves a backup, then
+  clears boxes, items, photos, custom types, trash and exports. Backups are kept
+  so the previous data can be restored.
   For more safety, copy `backups/` to another device now and then.
 
 Settings (only the data folder location) are stored in `stuffapp_settings.json`
