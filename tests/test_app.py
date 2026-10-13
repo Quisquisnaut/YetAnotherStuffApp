@@ -1,9 +1,10 @@
 import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from stuffapp import guide
-from stuffapp.app import App
+from stuffapp.app import App, main
 from stuffapp.ui import ConsoleUI
 from stuffapp.storage import StorageError
 
@@ -52,6 +53,15 @@ class ConsoleUIStyleTest(unittest.TestCase):
 
         self.assertIsNone(ui.choose("Main menu", ["Boxes"]))
         self.assertNotIn("\033", "\n".join(output))
+
+
+class DesktopLaunchTest(unittest.TestCase):
+    def test_desktop_gui_is_preferred_when_not_forcing_console(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with patch("stuffapp.desktop.run", return_value=True) as run_gui:
+                main(["--data", folder])
+
+            self.assertEqual(run_gui.call_args[0][0].root, os.path.abspath(folder))
 
 
 class ScriptedApp(TempStoreTestCase):

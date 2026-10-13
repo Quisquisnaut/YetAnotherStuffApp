@@ -11,13 +11,17 @@ It uses only the Python 3 standard library, so there is nothing to install. It r
 | Platform | How to run | User interface |
 |---|---|---|
 | iPhone / iPad – **Pythonista 3** | copy `main.py` and the `stuffapp` folder into Pythonista (or iCloud), open `main.py`, tap ▶ | full touch interface: lists, forms, photo gallery, camera / Photos / Files pickers, Quick Look / Share |
-| Windows | double-click `Start Stuff App.bat` (see [Windows quick setup](#windows-quick-setup)) or `py main.py` | text menus |
-| Linux / macOS | `python3 main.py` | text menus |
+| Windows | double-click `Start Stuff App.bat` (see [Windows quick setup](#windows-quick-setup)) or `py main.py` | desktop GUI (Tkinter) |
+| Linux / macOS | `python3 main.py` | desktop GUI (Tkinter) |
 | Android – Termux or Pydroid 3 | `python main.py` / open `main.py` and run it | text menus |
 
 Options:
 - `--data FOLDER` chooses where to keep the data. The `STUFFAPP_DATA` environment variable does the same.
 - `--console` uses the text menus even in Pythonista.
+
+The desktop GUI supports browsing boxes and items, search, details, and common
+create, edit, move, delete, and import actions. Use `--console` for the full
+text-menu feature set or if Tkinter/a graphical display is unavailable.
 
 Text menus use terminal colors when output goes to a terminal. Set `NO_COLOR`
 to disable them.

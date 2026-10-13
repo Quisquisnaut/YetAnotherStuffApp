@@ -29,7 +29,8 @@ class WindowsReleaseTest(unittest.TestCase):
         with zipfile.ZipFile(path) as archive:
             names = archive.namelist()
             bat = archive.read("YetAnotherStuffApp/Start Stuff App.bat")
-        for name in ("main.py", "README.md", "WINDOWS-SETUP.txt", "stuffapp/__init__.py", "stuffapp/app.py"):
+        for name in ("main.py", "README.md", "WINDOWS-SETUP.txt", "stuffapp/__init__.py",
+                     "stuffapp/app.py", "stuffapp/desktop.py"):
             self.assertIn("YetAnotherStuffApp/" + name, names)
         self.assertTrue(all(n.startswith("YetAnotherStuffApp/") for n in names))
         self.assertFalse([n for n in names if "/tests/" in n or "__pycache__" in n or n.endswith(".pyc")])

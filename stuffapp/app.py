@@ -899,6 +899,9 @@ def main(argv=None):
         if touch is not None:
             touch.run(store)
             return
+        from .desktop import run as run_desktop
+        if run_desktop(store):
+            return
     from .ui import ConsoleUI
 
     try:
