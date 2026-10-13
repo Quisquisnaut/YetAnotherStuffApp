@@ -44,10 +44,10 @@ import json
 import os
 import re
 
-from .images import import_image_file
+from .images import import_image_file, to_jpeg_bytes
 from .itemtypes import GENERIC
-from .storage import (EXTRA_PREFIX, FIELD_LABELS, LINE_FIELDS, STANDARD_KEYS, TEXT_FIELDS, StorageError,
-                      clean_field_value, field_options)
+from .storage import (EXTRA_PREFIX, FIELD_LABELS, ITEM_FIELDS, LINE_FIELDS, STANDARD_KEYS, TEXT_FIELDS,
+                      StorageError, clean_field_value, field_options)
 
 KEY_ALIASES = {
     "name": "name",
@@ -347,3 +347,132 @@ def import_item_file(store, path, box_id=None, type_id=None):
         except StorageError as exc:
             warnings.append("%s: %s" % (image, exc))
     return store.get_item(item["id"]), warnings
+
+
+MAX_PLACE_FILE_BYTES = 10 * 1024 * 1024
+_PLACE_DATA_RE = re.compile(r"```place-data\s*\n(.*?)\n```", re.DOTALL)
+
+
+def _read_place_data(path):
+    if os.path.getsize(path) > MAX_PLACE_FILE_BYTES:
+        raise StorageError("The Place file is too large (max 10 MB).")
+    try:
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            text = fh.read()
+    except UnicodeDecodeError:
+        raise StorageError("The Place file is not UTF-8 text.")
+    if path.lower().endswith(".json"):
+        source = text
+    else:
+        match = _PLACE_DATA_RE.search(text)
+        if not match:
+            raise StorageError("This Markdown file has no Place import data (export a Place to Markdown first).")
+        source = match.group(1)
+    try:
+        data = json.loads(source)
+    except ValueError as exc:
+        raise StorageError("Invalid Place data: %s" % exc)
+    if not isinstance(data, dict) or data.get("format") != "YetAnotherStuffApp Place" or data.get("version") != 1:
+        raise StorageError("This is not a supported Place file (expected YetAnotherStuffApp Place version 1).")
+    return data
+
+
+def _place_image_path(base_dir, image):
+    if not isinstance(image, str) or not image:
+        raise StorageError("An image path must be a non-empty relative path.")
+    parts = image.replace("\\", "/").split("/")
+    if (":" in image or image.startswith(("/", "\\")) or os.path.isabs(image)
+            or any(part in ("", ".", "..") for part in parts)):
+        raise StorageError("Image paths must stay inside the Place file's folder: %s" % image)
+    base_real = os.path.realpath(base_dir)
+    image_path = os.path.realpath(os.path.join(base_dir, *parts))
+    if not image_path.startswith(base_real + os.sep):
+        raise StorageError("Image paths must stay inside the Place file's folder: %s" % image)
+    if not os.path.isfile(image_path):
+        raise StorageError("Image file not found: %s" % image)
+    try:
+        with open(image_path, "rb") as fh:
+            image_data = fh.read()
+        to_jpeg_bytes(image_data)
+    except (OSError, StorageError) as exc:
+        raise StorageError("Invalid image '%s': %s" % (image, exc))
+    return image_path
+
+
+def import_place_file(store, path):
+    """Validate and import a Place export, including all boxes, items and photos.
+
+    Place Markdown exports carry a ``place-data`` JSON block; standalone
+    version-1 JSON exports are accepted too. The complete tree is validated
+    before any Place, Box or Item is created.
+    """
+    data = _read_place_data(path)
+    name = data.get("name")
+    description = data.get("description", "")
+    boxes = data.get("boxes")
+    if not isinstance(name, str) or not name.strip():
+        raise StorageError("The Place needs a non-empty name.")
+    if not isinstance(description, str):
+        raise StorageError("The Place description must be text.")
+    if not isinstance(boxes, list):
+        raise StorageError("The Place must contain a list of Boxes.")
+    base_dir = os.path.dirname(os.path.abspath(path))
+    validated = []
+    for box_number, box in enumerate(boxes, 1):
+        context = "Box %d" % box_number
+        if not isinstance(box, dict):
+            raise StorageError("%s must be an object." % context)
+        label = box.get("label")
+        box_description = box.get("description", "")
+        items = box.get("items")
+        if not isinstance(label, str) or not label.strip():
+            raise StorageError("%s needs a non-empty name." % context)
+        if not isinstance(box_description, str):
+            raise StorageError("%s description must be text." % context)
+        if not isinstance(items, list):
+            raise StorageError("%s must contain a list of Items." % context)
+        checked_items = []
+        for item_number, raw_item in enumerate(items, 1):
+            item_context = "%s '%s', Item %d" % (context, label.strip(), item_number)
+            if not isinstance(raw_item, dict):
+                raise StorageError("%s must be an object." % item_context)
+            unknown = set(raw_item) - (set(ITEM_FIELDS) | {"type"})
+            if unknown:
+                raise StorageError("%s has unknown fields: %s." %
+                                   (item_context, ", ".join(sorted(unknown))))
+            item_name = raw_item.get("name")
+            if not isinstance(item_name, str) or not item_name.strip():
+                raise StorageError("%s needs a non-empty name." % item_context)
+            type_id = raw_item.get("type")
+            if not isinstance(type_id, str) or not type_id:
+                raise StorageError("%s needs an item type." % item_context)
+            try:
+                item_type = store.get_type(type_id)
+            except StorageError:
+                raise StorageError("%s uses an unknown item type '%s'." % (item_context, type_id[:60]))
+            raw_images = raw_item.get("images", [])
+            if not isinstance(raw_images, list):
+                raise StorageError("%s images must be a list of relative paths." % item_context)
+            image_paths = [_place_image_path(base_dir, image) for image in raw_images]
+            fields = dict((key, value) for key, value in raw_item.items()
+                          if key in ITEM_FIELDS and key not in ("name", "images"))
+            try:
+                normalized = store._normalize_item(dict(fields, name=item_name), item_type, check=True)
+                outside = store._outside_type(normalized, item_type)
+                if outside:
+                    raise StorageError("Not fields of the type '%s': %s" %
+                                       (item_type["name"], ", ".join(outside)))
+            except StorageError as exc:
+                raise StorageError("%s is invalid: %s" % (item_context, exc))
+            checked_items.append((type_id, normalized, image_paths))
+        validated.append((label.strip(), box_description, checked_items))
+
+    place = store.create_place(name, description)
+    for label, box_description, items in validated:
+        box = store.create_box(label, box_description, place_id=place["id"])
+        for type_id, fields, image_paths in items:
+            item_name = fields.pop("name")
+            item = store.create_item(item_name, box["id"], type_id, **fields)
+            for image_path in image_paths:
+                import_image_file(store, item["id"], image_path)
+    return store.get_place(place["id"])
