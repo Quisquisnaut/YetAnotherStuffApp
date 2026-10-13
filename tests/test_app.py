@@ -9,7 +9,7 @@ from .helpers import TINY_JPEG, TempStoreTestCase
 
 # Main menu: 1 Boxes, 2 Search, 3 Create Box, 4 Create Item, 5 Clone Item,
 # 6 Add Stuff to Box, 7 Import Item, 8 Import Image, 9 Export all, 10 Trash,
-# 11 Backups, 12 Item types, 13 Reminders, 14 Settings, 15 Help.
+# 11 Backups, 12 Item types, 13 Reminders, 14 Settings, 15 Help, 16 Places.
 # Box menu: 1 Show, 2 Create item, 3 Add Stuff, 4 Edit, 5 PDF, 6 MD, 7 Delete.
 # Item menu: 1 Details, 2 Edit, 3 Multi-line field, 4 Change type, 5 Clone,
 # 6 Move, 7 Import images, 8 View images, 9 Remove image, 10 PDF, 11 MD,
@@ -42,6 +42,12 @@ class ScriptedApp(TempStoreTestCase):
         self.run_app(["4", "0"])
         self.assertIn("Create a box first", self.text())
         self.assertEqual(self.store.list_items(), [])
+
+    def test_add_box_to_place_from_console(self):
+        place = self.store.create_place("Home")
+        box = self.store.create_box("Garage")
+        self.run_app(["16", "1", "2", "1", "0", "0"])
+        self.assertEqual(self.store.get_box(box["id"])["place"], place["id"])
 
     def test_add_stuff_to_box(self):
         a = self.store.create_box("A")

@@ -930,8 +930,8 @@ class App(object):
 
 def hidden_dirs(store):
     """App folders that file pickers should not show (exports stay visible)."""
-    return (store.boxes_dir, store.items_dir, store.images_dir, store.trash_dir, store.backups_dir,
-            store.meta_dir)
+    return (store.places_dir, store.boxes_dir, store.items_dir, store.images_dir, store.trash_dir,
+            store.backups_dir, store.meta_dir)
 
 
 def describe_filters(store, filters):

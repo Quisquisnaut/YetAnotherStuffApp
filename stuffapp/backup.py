@@ -1,6 +1,6 @@
 """Full backups of the data folder as zip files.
 
-A backup contains ``boxes/``, ``items/``, ``images/`` and ``meta/`` (the
+A backup contains ``places/``, ``boxes/``, ``items/``, ``images/`` and ``meta/`` (the
 user's item types). Backups are made automatically once a day when the app starts (if something changed), and
 before every restore; they can also be made by hand. The newest
 ``MAX_BACKUPS`` are kept.
@@ -20,7 +20,7 @@ from datetime import datetime
 from .storage import StorageError
 
 MAX_BACKUPS = 15
-CONTENT_DIRS = ("boxes", "items", "images", "meta")
+CONTENT_DIRS = ("places", "boxes", "items", "images", "meta")
 PREFIX = "stuff-backup-"
 MAX_FILES = 200000
 MAX_TOTAL_BYTES = 8 * 1024 * 1024 * 1024  # protects against "zip bombs"

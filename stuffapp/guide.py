@@ -252,7 +252,7 @@ time."""),
 
     ("Data folder and iCloud", """\
 All data lives in plain files in the data folder (by default "StuffData"
-next to main.py): boxes/, items/, images/, meta/ (your item types, in
+next to main.py): places/, boxes/, items/, images/, meta/ (your item types, in
 types.json), trash/, backups/ and exports/.
 
 Settings > data folder lets you move it, for example into iCloud Drive

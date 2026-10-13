@@ -181,10 +181,7 @@ def _place_data(store, place_id, image_dir=None, md_dir=None):
                 item_image_dir = os.path.join(image_dir, "%s_%s" % (box["id"], item["id"]))
                 for source, filename in zip(store.image_paths(item), item.get("images") or []):
                     if os.path.isfile(source):
-                        if not os.path.isdir(item_image_dir):
-                            os.makedirs(item_image_dir)
                         destination = os.path.join(item_image_dir, filename)
-                        shutil.copyfile(source, destination)
                         image_paths.append(os.path.relpath(destination, md_dir).replace(os.sep, "/"))
             item_data["images"] = image_paths
             box_data["items"].append(item_data)
