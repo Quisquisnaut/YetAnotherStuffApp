@@ -7,7 +7,7 @@ same storage, import, export and backup modules.
 import os
 
 from . import backup, config, export, guide
-from .importer import import_item_file, suggested_box, suggested_type
+from .importer import import_item_file, import_place_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
 from .storage import (EXTRA_KINDS, EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_KIND_NAMES, FIELD_LABELS, REMINDER_DAYS,
                       SORT_KEYS, StorageError, field_options)
@@ -138,13 +138,16 @@ class App(object):
         for message in startup(self.store):
             self.ui.message(message, title="Check")
         actions = [
+            ("Places", self.places_menu),
             ("Boxes", self.boxes_menu),
             ("Search & filter items", self.search),
+            ("Create Place", self.create_place),
             ("Create Box", self.create_box),
             ("Create Item", self.create_item),
             ("Clone Item", self.clone_item_menu),
             ("Add Stuff to Box (move an item)", self.add_stuff_to_box),
             ("Import Item", self.import_item),
+            ("Import Place", self.import_place),
             ("Import Image", self.import_image),
             ("Export all", self.export_all),
             ("Trash (recently deleted)", self.trash_menu),
@@ -267,6 +270,96 @@ class App(object):
         self.ui.show_file(func(self.store, *args))
 
     # --------------------------------------------------------------- boxes
+    def create_place(self):
+        data = self.ui.form("Create Place", [("name", "Name", ""), ("description", "Description", "")])
+        place = self.store.create_place(data.get("name"), data.get("description"))
+        self.ui.message("Place '%s' created." % place["name"])
+        return place
+
+    def places_menu(self):
+        places = self.store.list_places()
+        if not places:
+            self.ui.message("No Places yet. Create a Place first.")
+            return
+        index = self.ui.choose("Places", [
+            "%s (%d boxes)" % (p["name"], len(self.store.place_boxes(p["id"]))) for p in places])
+        if index is not None:
+            self.place_menu(places[index]["id"])
+
+    def place_menu(self, place_id):
+        while True:
+            place = self.store.get_place(place_id)
+            boxes = self.store.place_boxes(place_id)
+            actions = [
+                ("Show boxes", self.place_show_boxes),
+                ("Add a box to this Place", self.place_add_box),
+                ("Remove a box from this Place", self.place_remove_box),
+                ("Move a box to another Place", self.place_move_box),
+                ("Edit Place", self.edit_place),
+                ("Export to PDF", lambda p: self._export(export.export_place_pdf, p)),
+                ("Export to Markdown", lambda p: self._export(export.export_place_markdown, p)),
+            ]
+            index = self.ui.choose("Place: %s (%d boxes, ID %s)" %
+                                   (place["name"], len(boxes), place["id"]), [a[0] for a in actions])
+            if index is None:
+                return
+            self._safe(actions[index][1], place_id)
+
+    def place_show_boxes(self, place_id):
+        boxes = self.store.place_boxes(place_id)
+        if not boxes:
+            self.ui.message("This Place has no boxes.")
+            return
+        index = self.ui.choose("Boxes in Place", [
+            "%s (%d items)" % (box["label"], len(self.store.box_items(box["id"]))) for box in boxes])
+        if index is not None:
+            self.box_menu(boxes[index]["id"])
+
+    def place_add_box(self, place_id):
+        place = self.store.get_place(place_id)
+        boxes = [b for b in self.store.list_boxes() if b.get("place") != place_id]
+        if not boxes:
+            self.ui.message("There are no other boxes to add.")
+            return
+        index = self.ui.choose("Add which box to '%s'?" % place["name"], [b["label"] for b in boxes])
+        if index is not None:
+            box = self.store.move_box(boxes[index]["id"], place_id)
+            self.ui.message("Box '%s' added to '%s'." % (box["label"], place["name"]))
+
+    def place_remove_box(self, place_id):
+        place = self.store.get_place(place_id)
+        boxes = self.store.place_boxes(place_id)
+        if not boxes:
+            self.ui.message("This Place has no boxes.")
+            return
+        index = self.ui.choose("Remove which box from '%s'?" % place["name"], [b["label"] for b in boxes])
+        if index is not None:
+            box = self.store.move_box(boxes[index]["id"])
+            self.ui.message("Box '%s' removed from '%s'." % (box["label"], place["name"]))
+
+    def place_move_box(self, place_id):
+        place = self.store.get_place(place_id)
+        boxes = self.store.place_boxes(place_id)
+        if not boxes:
+            self.ui.message("This Place has no boxes.")
+            return
+        index = self.ui.choose("Move which box from '%s'?" % place["name"], [b["label"] for b in boxes])
+        if index is None:
+            return
+        box = boxes[index]
+        places = [p for p in self.store.list_places() if p["id"] != place_id]
+        choices = ["Remove from Place"] + [p["name"] for p in places]
+        destination = self.ui.choose("Move '%s' to" % box["label"], choices)
+        if destination is not None:
+            new_place_id = None if destination == 0 else places[destination - 1]["id"]
+            self.store.move_box(box["id"], new_place_id)
+
+    def edit_place(self, place_id):
+        place = self.store.get_place(place_id)
+        data = self.ui.form("Edit Place", [("name", "Name", place["name"]),
+                                           ("description", "Description", place.get("description", ""))])
+        self.store.update_place(place_id, **data)
+
     def create_box(self):
         data = self.ui.form("Create Box", [("label", "Label", ""), ("description", "Description", "")])
         box = self.store.create_box(data.get("label"), data.get("description"))
@@ -664,6 +757,16 @@ class App(object):
             text += "\n" + "\n".join(warnings)
         self.ui.message(text)
         return item
+
+    def import_place(self):
+        path = self.ui.pick_text_file()
+        if not path:
+            return None
+        place = import_place_file(self.store, path)
+        self.ui.message("Place '%s' imported with %d box(es) and %d item(s)." %
+                        (place["name"], len(self.store.place_boxes(place["id"])),
+                         sum(len(self.store.box_items(b["id"])) for b in self.store.place_boxes(place["id"]))))
+        return place
 
     def import_image(self):
         item = self.pick_item("Add images to which item?")

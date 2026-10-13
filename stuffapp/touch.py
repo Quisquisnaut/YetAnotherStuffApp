@@ -26,7 +26,7 @@ from . import __version__, backup, config, export, guide
 from .app import (KIND_CHOICES, KIND_NAMES, TRASH_DAYS, describe_filters, due_text, hidden_dirs, options_text,
                   reminder_line, startup)
 from .images import pil_to_jpeg_bytes, to_jpeg_bytes
-from .importer import import_item_file, suggested_box, suggested_type
+from .importer import import_item_file, import_place_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
 from .storage import (EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_LABELS, REMINDER_DAYS, SORT_KEYS, Store, StorageError,
                       field_options, is_safe_link)
@@ -319,7 +319,18 @@ class HomeScreen(TableScreen):
     def refresh(self):
         store = self.app.store
         items = store.list_items()
+        places = store.list_places()
         counts_boxes = store.list_boxes()
+        place_rows = []
+        for place in places:
+            boxes = store.place_boxes(place["id"])
+            place_rows.append({
+                "title": place["name"],
+                "subtitle": "%d box(es)" % len(boxes) + ("  ·  " + place["description"] if place.get("description") else ""),
+                "on_tap": functools.partial(self.app.open_place, place["id"]),
+            })
+        if not place_rows:
+            place_rows.append({"title": "No Places yet", "color": MUTED})
         box_rows = []
         for box in counts_boxes:
             in_box = [i for i in items if i.get("box") == box["id"]]
@@ -341,10 +352,13 @@ class HomeScreen(TableScreen):
                        % REMINDER_DAYS),
                    "color": DANGER if overdue else None,
                    "on_tap": lambda: self.app.push(RemindersScreen(self.app))}]),
+            ("Places (%d)" % len(places), place_rows),
             ("Boxes (%d)" % len(counts_boxes), box_rows),
             ("Add", [
+                {"title": "Create Place", "on_tap": self.app.on_create_place, "accessory": "none", "color": ACCENT},
                 {"title": "Create Box", "on_tap": self.app.on_create_box, "accessory": "none", "color": ACCENT},
                 {"title": "Create Item", "on_tap": self.app.on_create_item, "accessory": "none", "color": ACCENT},
+                {"title": "Import Place", "on_tap": self.app.on_import_place, "accessory": "none", "color": ACCENT},
                 {"title": "Import Item", "on_tap": self.app.on_import_item, "accessory": "none", "color": ACCENT},
                 {"title": "Import Image", "on_tap": self.app.on_import_image, "accessory": "none", "color": ACCENT},
                 {"title": "Clone Item", "on_tap": self.app.on_clone_pick, "accessory": "none", "color": ACCENT},
@@ -367,6 +381,41 @@ class HomeScreen(TableScreen):
 
     def on_add(self, sender):
         self.app.on_add_menu()
+
+
+class PlaceScreen(TableScreen):
+    def __init__(self, app, place_id):
+        TableScreen.__init__(self, app, "Place")
+        self.place_id = place_id
+        self.buttons(("Actions", self.on_actions))
+        self.refresh()
+
+    def refresh(self):
+        store = self.app.store
+        if not store.place_exists(self.place_id):
+            self.gone = True
+            self.show([("", [{"title": "This Place was deleted.", "color": MUTED}])])
+            return
+        place = store.get_place(self.place_id)
+        self.name = place["name"]
+        boxes = store.place_boxes(self.place_id)
+        head = []
+        if place.get("description"):
+            head.append({"title": place["description"], "lines": 0})
+        head.append({"title": "ID " + place["id"], "color": MUTED})
+        rows = [{
+            "title": box["label"],
+            "subtitle": count_text(store, store.box_items(box["id"])) +
+                        ("  ·  " + box["description"] if box.get("description") else ""),
+            "on_tap": functools.partial(self.app.open_box, box["id"]),
+        } for box in boxes]
+        if not rows:
+            rows.append({"title": "No boxes: tap Actions to add one", "color": MUTED})
+        self.show([(place["name"], head), ("Boxes (%d)" % len(boxes), rows)])
+
+    def on_actions(self, sender):
+        if not self.gone:
+            self.app.on_place_actions(self.place_id)
 
 
 class BoxScreen(TableScreen):
@@ -1336,6 +1385,9 @@ class TouchApp(object):
     def open_box(self, box_id):
         self.push(BoxScreen(self, box_id))
 
+    def open_place(self, place_id):
+        self.push(PlaceScreen(self, place_id))
+
     def open_item(self, item_id):
         self.push(ItemScreen(self, item_id))
 
@@ -1488,17 +1540,37 @@ class TouchApp(object):
 
     @task
     def _add_menu(self):
-        index = choose("Add", ["Create Box", "Create Item", "Import Item", "Import Image", "Clone Item"])
+        index = choose("Add", ["Create Place", "Create Box", "Create Item", "Import Place",
+                               "Import Item", "Import Image", "Clone Item"])
         if index == 0:
-            self._create_box()
+            self._create_place()
         elif index == 1:
-            self._create_item()
+            self._create_box()
         elif index == 2:
-            self._import_item()
+            self._create_item()
         elif index == 3:
-            self._import_image()
+            self._import_place()
         elif index == 4:
+            self._import_item()
+        elif index == 5:
+            self._import_image()
+        elif index == 6:
             self._clone_pick()
+
+    @task
+    def on_create_place(self):
+        self._create_place()
+
+    def _create_place(self):
+        data = dialogs.form_dialog("Create Place", [
+            {"type": "text", "key": "name", "title": "Name", "value": ""},
+            {"type": "text", "key": "description", "title": "Description", "value": ""},
+        ])
+        if data is None:
+            return
+        place = self.store.create_place(data.get("name"), data.get("description"))
+        self.refresh_all()
+        self.open_place(place["id"])
 
     @task
     def on_create_box(self):
@@ -1527,6 +1599,28 @@ class TouchApp(object):
     @task
     def on_import_item(self):
         self._import_item()
+
+    @task
+    def on_import_place(self):
+        self._import_place()
+
+    def _import_place(self):
+        index = choose("Import a Place file (.md, .json) from", ["Files app", "Pythonista folder"])
+        path = None
+        if index == 0:
+            path = dialogs.pick_document(types=["public.text", "public.json", "net.daringfireball.markdown"])
+        elif index == 1:
+            base = os.path.dirname(self.store.root)
+            files = find_files(base, (".md", ".markdown", ".json"), skip=self._hidden())
+            picked = choose("Choose the Place file", files)
+            if picked is not None:
+                path = os.path.join(base, files[picked])
+        if not path:
+            return
+        place = import_place_file(self.store, path)
+        self.refresh_all()
+        self.open_place(place["id"])
+        info("Place imported", "'%s' and its boxes and items were imported." % place["name"])
 
     def _import_item(self):
         index = choose("Import an item file (.txt, .md, .json) from", ["Files app", "Pythonista folder"])
@@ -1646,6 +1740,59 @@ class TouchApp(object):
                 store.delete_box(box_id)
                 self.pop()
                 self.refresh_all()
+
+    @task
+    def on_place_actions(self, place_id):
+        store = self.store
+        place = store.get_place(place_id)
+        boxes = store.place_boxes(place_id)
+        actions = ["Add a box to this Place", "Remove a box from this Place", "Move a box to another Place",
+                   "Edit Place", "Export to PDF", "Export to Markdown"]
+        index = choose(place["name"], actions)
+        if index == 0:
+            candidates = [b for b in store.list_boxes() if b.get("place") != place_id]
+            if not candidates:
+                info("No boxes", "There are no boxes outside this Place.")
+                return
+            selected = choose("Add which box to '%s'?" % place["name"], [b["label"] for b in candidates])
+            if selected is not None:
+                store.move_box(candidates[selected]["id"], place_id)
+                self.refresh_all()
+        elif index == 1:
+            if not boxes:
+                info("No boxes", "This Place has no boxes.")
+                return
+            selected = choose("Remove which box?", [b["label"] for b in boxes])
+            if selected is not None:
+                store.move_box(boxes[selected]["id"])
+                self.refresh_all()
+        elif index == 2:
+            if not boxes:
+                info("No boxes", "This Place has no boxes.")
+                return
+            selected = choose("Move which box?", [b["label"] for b in boxes])
+            if selected is None:
+                return
+            box = boxes[selected]
+            destinations = [p for p in store.list_places() if p["id"] != place_id]
+            choices = ["Remove from Place"] + [p["name"] for p in destinations]
+            destination = choose("Move '%s' to" % box["label"], choices)
+            if destination is not None:
+                store.move_box(box["id"], None if destination == 0 else destinations[destination - 1]["id"])
+                self.refresh_all()
+        elif index == 3:
+            data = dialogs.form_dialog("Edit Place", [
+                {"type": "text", "key": "name", "title": "Name", "value": place["name"]},
+                {"type": "text", "key": "description", "title": "Description",
+                 "value": place.get("description", "")},
+            ])
+            if data is not None:
+                store.update_place(place_id, **data)
+                self.refresh_all()
+        elif index == 4:
+            self.show_file(export.export_place_pdf(store, place_id))
+        elif index == 5:
+            self.show_file(export.export_place_markdown(store, place_id))
 
     @task
     def on_item_actions(self, item_id):
