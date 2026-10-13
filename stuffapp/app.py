@@ -138,16 +138,13 @@ class App(object):
         for message in startup(self.store):
             self.ui.message(message, title="Check")
         actions = [
-            ("Places", self.places_menu),
             ("Boxes", self.boxes_menu),
             ("Search & filter items", self.search),
-            ("Create Place", self.create_place),
             ("Create Box", self.create_box),
             ("Create Item", self.create_item),
             ("Clone Item", self.clone_item_menu),
             ("Add Stuff to Box (move an item)", self.add_stuff_to_box),
             ("Import Item", self.import_item),
-            ("Import Place", self.import_place),
             ("Import Image", self.import_image),
             ("Export all", self.export_all),
             ("Trash (recently deleted)", self.trash_menu),
@@ -156,6 +153,9 @@ class App(object):
             ("Reminders", self.reminders_menu),
             ("Settings: data folder", self.settings),
             ("Help", self.help_menu),
+            ("Places", self.places_menu),
+            ("Create Place", self.create_place),
+            ("Import Place", self.import_place),
         ]
         while True:
             count = len(self.store.due_reminders())

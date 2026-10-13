@@ -2,6 +2,7 @@ import json
 import os
 import re
 import unittest
+import zlib
 
 from stuffapp import export
 from stuffapp.importer import import_item_file, import_place_file, parse_item_text, suggested_box
@@ -87,7 +88,8 @@ class ImportTests(TempStoreTestCase):
         self.assertIn("## Box: Kitchen", markdown)
         self.assertIn("### Pan", markdown)
         self.assertIn("Cast iron", markdown)
-        self.assertIn("pan.jpg", markdown)
+        image_link = re.search(r"\]\(([^)]+\.jpg)\)", markdown).group(1)
+        self.assertTrue(os.path.isfile(os.path.join(os.path.dirname(path), image_link)))
         imported = import_place_file(self.store, path)
         imported_box = self.store.place_boxes(imported["id"])[0]
         imported_item = self.store.box_items(imported_box["id"])[0]
@@ -150,9 +152,11 @@ class ExportTests(TempStoreTestCase):
         box = self.store.create_box("Kitchen", place_id=place["id"])
         self.store.create_item("Pan", box["id"])
         data = self.check_pdf(export.export_place_pdf(self.store, place["id"]))
-        self.assertIn(b"Place: Home", data)
-        self.assertIn(b"Box: Kitchen", data)
-        self.assertIn(b"Pan", data)
+        streams = re.findall(rb"/Filter /FlateDecode >>\nstream\n(.*?)\nendstream", data, re.DOTALL)
+        content = b"\n".join(zlib.decompress(stream) for stream in streams)
+        self.assertIn(b"Place: Home", content)
+        self.assertIn(b"Box: Kitchen", content)
+        self.assertIn(b"Pan", content)
 
     def test_format_price(self):
         self.assertEqual(export.format_price(1299), "€1,299.00")
