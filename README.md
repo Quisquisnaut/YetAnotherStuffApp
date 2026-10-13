@@ -126,7 +126,7 @@ as a release when a `v*` tag is pushed (e.g. `git tag v0.3.0 && git push --tags`
   (for when you own two of the same thing).
 * **Add Stuff to Box**: moves an item into another box.
 * **Import Item**: creates an item in a box from a text file (see below), a `.json`
-  file, or a Markdown file the app exported earlier.
+  file, or a Markdown item file the app exported earlier. Box exports aren't item files.
 * **Import Image**: attaches one or more pictures to an item. On iPhone you can
   take them with the camera or pick them from Photos, Files or the Pythonista folder.
 * **Search & filter**: free-text search across all fields and box labels.

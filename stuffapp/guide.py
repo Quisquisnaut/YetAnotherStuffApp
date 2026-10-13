@@ -199,8 +199,8 @@ If the file names a Box that exists, you are offered that box; otherwise you
 choose one. If the file names a Type that exists, the item gets that type;
 otherwise you choose one. Values for fields the type does not have, and values that do not fit
 their field's kind (e.g. "lots" for a Number), are added to the notes
-(and you are told). A Markdown file exported by this app
-can be imported back.
+(and you are told). A Markdown item export from this app can be imported back. A box export
+contains multiple items and cannot be imported as a single item.
 
 Example:
 

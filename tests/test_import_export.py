@@ -74,6 +74,16 @@ class ImportTests(TempStoreTestCase):
             self.assertEqual(imported[key], item[key], key)
         self.assertEqual(len(imported["images"]), 1)
 
+    def test_box_markdown_export_is_not_imported_as_item(self):
+        box = self.store.create_box("Tools")
+        item = self.store.create_item("Drill", box["id"])
+        path = export.export_box_markdown(self.store, box["id"])
+
+        with self.assertRaisesRegex(StorageError, "box export"):
+            import_item_file(self.store, path, box_id=box["id"])
+
+        self.assertEqual([existing["id"] for existing in self.store.box_items(box["id"])], [item["id"]])
+
 
 class ExportTests(TempStoreTestCase):
     def check_pdf(self, path):
