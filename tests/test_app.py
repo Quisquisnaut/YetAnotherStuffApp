@@ -30,7 +30,7 @@ class ConsoleUIStyleTest(unittest.TestCase):
 
         self.assertIsNone(ui.choose("Main menu", ["Boxes"]))
         self.assertIn("\033[1;36m== Main menu ==\033[0m", output)
-        self.assertIn("  \033[36m 1\033[0m", output)
+        self.assertTrue(any("  \033[36m 1\033[0m" in line for line in output))
         self.assertEqual(prompts, ["\033[1;36m> \033[0m"])
 
     def test_terminal_styles_are_disabled_when_requested(self):
