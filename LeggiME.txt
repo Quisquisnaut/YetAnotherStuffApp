@@ -1,0 +1,42 @@
+Per build
+python tools/make_release.py
+
+
+Il progetto YetAnotherStuffApp prevede una procedura di build Windows già automatizzata, definita in .github/workflows/windows-release.yml.
+Sono previste tre modalità operative.
+1. Build locale
+Da PowerShell, nella cartella del progetto:
+python -m unittest discover -s tests -t .
+python tools/make_release.py
+
+
+Il primo comando esegue i test, il secondo genera il pacchetto ZIP.
+Nel tuo caso, la build ha già prodotto correttamente:
+dist\YetAnotherStuffApp-0.3.0-windows.zip
+2. Build automatica su GitHub
+Il workflow windows-release.yml può essere avviato manualmente da GitHub Actions oppure automaticamente quando viene aperta o aggiornata una Pull Request.
+La procedura:
+1. Prepara un ambiente Windows con Python 3.12.
+2. Esegue i test con unittest.
+3. Genera lo ZIP tramite tools/make_release.py.
+4. Estrae lo ZIP e verifica che il launcher funzioni.
+5. Controlla che venga creata la cartella StuffData.
+6. Carica lo ZIP come artifact scaricabile da GitHub Actions.
+Questa modalità non pubblica automaticamente una release.
+3. Pubblicazione di una release ufficiale
+Il workflow prevede che una release venga creata automaticamente quando si pubblica un tag Git che inizia con v.
+Per esempio:
+git tag v0.3.0
+git push origin v0.3.0
+
+
+Questo attiva la build, i test e, se hanno successo, la pubblicazione della release su GitHub con il pacchetto ZIP allegato.
+Prima di utilizzare questi comandi, occorre verificare che il tag v0.3.0 non esista già.
+Differenza tra le tre procedure
+Procedura	Risultato
+Build locale	ZIP in dist
+GitHub Actions manuale o PR	ZIP scaricabile dagli artifact
+Tag v0.3.0	Release ufficiale GitHub con ZIP
+Un dettaglio importante: la distribuzione attuale non sembra prevedere la compilazione di un .exe autonomo. Il pacchetto contiene il programma Python e un launcher Windows .bat.
+La build che hai appena eseguito corrisponde quindi alla procedura ufficiale di creazione dello ZIP. Manca soltanto la verifica del funzionamento del pacchetto estratto, prevista dal workflow.
+	
