@@ -19,9 +19,10 @@ Options:
 - `--data FOLDER` chooses where to keep the data. The `STUFFAPP_DATA` environment variable does the same.
 - `--console` uses the text menus even in Pythonista.
 
-The desktop GUI supports browsing boxes and items, search, details, and common
-create, edit, move, delete, and import actions. Use `--console` for the full
-text-menu feature set or if Tkinter/a graphical display is unavailable.
+The desktop GUI and text menus provide the same inventory features, including
+filters, exports, reminders, item types, trash, backups, and settings. Use
+`--console` to choose the text menus or if Tkinter/a graphical display is
+unavailable.
 
 Text menus use terminal colors when output goes to a terminal. Set `NO_COLOR`
 to disable them.
