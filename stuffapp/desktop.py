@@ -365,7 +365,7 @@ class DesktopApp(object):
                 child.destroy()
             widgets.clear()
             item_type = type_by_name[type_value.get()]
-            rows = self.store.item_fields(item or {}, item_type["id"], leftovers=False)
+            rows = self._item_dialog_fields(item, item_type["id"])
             for index, (key, label, kind, value) in enumerate(rows):
                 ttk.Label(body, text=label).grid(row=index, column=0, sticky="nw", padx=(0, 12), pady=5)
                 initial = previous.get(key)
@@ -445,6 +445,11 @@ class DesktopApp(object):
         footer.grid(row=2, column=0, sticky="e")
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(6, 0))
         ttk.Button(footer, text="Save", command=save).pack(side="right")
+
+    def _item_dialog_fields(self, item, type_id):
+        rows = [("name", "Name", "line", (item or {}).get("name", ""))]
+        rows.extend(self.store.item_fields(item or {}, type_id, leftovers=False))
+        return rows
 
     def move_selected(self):
         item = self._selected_item()

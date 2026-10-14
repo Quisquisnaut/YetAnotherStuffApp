@@ -4,6 +4,15 @@ from tests.helpers import TempStoreTestCase
 
 
 class DesktopFeatureTests(TempStoreTestCase):
+    def test_new_item_dialog_fields_include_name(self):
+        app = DesktopApp.__new__(DesktopApp)
+        app.store = self.store
+
+        rows = app._item_dialog_fields({}, GENERIC)
+
+        self.assertEqual(rows[0], ("name", "Name", "line", ""))
+        self.assertIn("description", [key for key, _label, _kind, _value in rows])
+
     def test_visible_items_combines_text_and_filters(self):
         box = self.store.create_box("Garage")
         other = self.store.create_box("Office")
