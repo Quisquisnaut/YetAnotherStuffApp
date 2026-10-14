@@ -26,12 +26,14 @@ Spare bits are in the blue case.
 
 TOPICS = [
     ("Getting started", """\
-Stuff keeps your belongings sorted in boxes.
+Stuff keeps your belongings sorted in boxes. You can group related boxes in a
+Place, such as a room, building or storage unit.
 
-1. Create a Box (for example "Garage" or "Winter clothes").
-2. Create Items inside it. Choose the item type (Generic, Book, Device...)
+1. Optionally create a Place, then add boxes to it.
+2. Create a Box (for example "Garage" or "Winter clothes").
+3. Create Items inside it. Choose the item type (Generic, Book, Device...)
    and give it a name: everything else is optional.
-3. Add photos, links, the paid price (in Euro), where it came from and notes.
+4. Add photos, links, the paid price (in Euro), where it came from and notes.
 
 Every item is always inside exactly one box. Every box and every item has
 its own internal ID, shown in the details and in exports, so two identical
@@ -45,7 +47,20 @@ anything you like.
 - Edit Box: change the label or description.
 - Delete Box: only possible when the box is EMPTY. Delete its items or move
   them to other boxes first. You are always asked to confirm.
-- Export: a box can be exported to PDF or Markdown with all its items."""),
+- Export: a box can be exported to PDF or Markdown with all its items. Places contain boxes only; they cannot contain other Places or
+Items."""),
+
+("Places", """\
+A Place has a name and an optional description, and can contain Boxes only.
+An Item always belongs to a Box, never directly to a Place. A Place cannot be
+inside another Place.
+
+- Add a box to a Place, remove it, or move it to another Place. A box can also
+  remain outside all Places.
+- Export a Place to PDF or Markdown with all its boxes, items and photos.
+- Import a Place Markdown export or a version-1 Place JSON file. The app checks
+  the whole Place, boxes, items, types, fields and image paths before importing
+  any of them, and explains what is invalid."""),
 
     ("Items", """\
 An item has a name and a type. Everything else is optional; which details
@@ -199,8 +214,8 @@ If the file names a Box that exists, you are offered that box; otherwise you
 choose one. If the file names a Type that exists, the item gets that type;
 otherwise you choose one. Values for fields the type does not have, and values that do not fit
 their field's kind (e.g. "lots" for a Number), are added to the notes
-(and you are told). A Markdown file exported by this app
-can be imported back.
+(and you are told). A Markdown item export from this app can be imported back. A box export
+contains multiple items and cannot be imported as a single item.
 
 Example:
 
@@ -231,13 +246,16 @@ Nothing is lost by accident:
   something changed) and the last 15 are kept. You can also make one by hand
   and restore any backup. Before a restore, the current data is saved as a
   "before-restore" backup, so a restore can be undone too.
+- Reset data folder (Settings): clears places, boxes, items, photos, custom
+  types, trash and exports after saving a "before-reset" backup. Existing backups
+  are kept, so the previous data can be restored.
 
 For extra safety copy the "backups" folder to another device from time to
 time."""),
 
     ("Data folder and iCloud", """\
 All data lives in plain files in the data folder (by default "StuffData"
-next to main.py): boxes/, items/, images/, meta/ (your item types, in
+next to main.py): places/, boxes/, items/, images/, meta/ (your item types, in
 types.json), trash/, backups/ and exports/.
 
 Settings > data folder lets you move it, for example into iCloud Drive
