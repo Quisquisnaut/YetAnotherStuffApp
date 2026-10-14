@@ -7,7 +7,7 @@ same storage, import, export and backup modules.
 import os
 
 from . import backup, config, export, guide
-from .importer import import_item_file, import_place_file, suggested_box, suggested_type
+from .importer import import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
 from .storage import (EXTRA_KINDS, EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_KIND_NAMES, FIELD_LABELS, REMINDER_DAYS,
                       SORT_KEYS, StorageError, field_options)
@@ -153,9 +153,6 @@ class App(object):
             ("Reminders", self.reminders_menu),
             ("Settings: data folder", self.settings),
             ("Help", self.help_menu),
-            ("Places", self.places_menu),
-            ("Create Place", self.create_place),
-            ("Import Place", self.import_place),
         ]
         while True:
             count = len(self.store.due_reminders())
@@ -270,107 +267,10 @@ class App(object):
         self.ui.show_file(func(self.store, *args))
 
     # --------------------------------------------------------------- boxes
-    def create_place(self):
-        data = self.ui.form("Create Place", [("name", "Name", ""), ("description", "Description", "")])
-        place = self.store.create_place(data.get("name"), data.get("description"))
-        self.ui.message("Place '%s' created." % place["name"])
-        return place
-
-    def places_menu(self):
-        places = self.store.list_places()
-        if not places:
-            self.ui.message("No Places yet. Create a Place first.")
-            return
-        index = self.ui.choose("Places", [
-            "%s (%d boxes)" % (p["name"], len(self.store.place_boxes(p["id"]))) for p in places])
-        if index is not None:
-            self.place_menu(places[index]["id"])
-
-    def place_menu(self, place_id):
-        while True:
-            place = self.store.get_place(place_id)
-            boxes = self.store.place_boxes(place_id)
-            actions = [
-                ("Show boxes", self.place_show_boxes),
-                ("Add a box to this Place", self.place_add_box),
-                ("Remove a box from this Place", self.place_remove_box),
-                ("Move a box to another Place", self.place_move_box),
-                ("Edit Place", self.edit_place),
-                ("Export to PDF", lambda p: self._export(export.export_place_pdf, p)),
-                ("Export to Markdown", lambda p: self._export(export.export_place_markdown, p)),
-            ]
-            index = self.ui.choose("Place: %s (%d boxes, ID %s)" %
-                                   (place["name"], len(boxes), place["id"]), [a[0] for a in actions])
-            if index is None:
-                return
-            self._safe(actions[index][1], place_id)
-
-    def place_show_boxes(self, place_id):
-        boxes = self.store.place_boxes(place_id)
-        if not boxes:
-            self.ui.message("This Place has no boxes.")
-            return
-        index = self.ui.choose("Boxes in Place", [
-            "%s (%d items)" % (box["label"], len(self.store.box_items(box["id"]))) for box in boxes])
-        if index is not None:
-            self.box_menu(boxes[index]["id"])
-
-    def place_add_box(self, place_id):
-        place = self.store.get_place(place_id)
-        boxes = [b for b in self.store.list_boxes() if b.get("place") != place_id]
-        if not boxes:
-            self.ui.message("There are no other boxes to add.")
-            return
-        index = self.ui.choose("Add which box to '%s'?" % place["name"], [b["label"] for b in boxes])
-        if index is not None:
-            box = self.store.move_box(boxes[index]["id"], place_id)
-            self.ui.message("Box '%s' added to '%s'." % (box["label"], place["name"]))
-
-    def place_remove_box(self, place_id):
-        place = self.store.get_place(place_id)
-        boxes = self.store.place_boxes(place_id)
-        if not boxes:
-            self.ui.message("This Place has no boxes.")
-            return
-        index = self.ui.choose("Remove which box from '%s'?" % place["name"], [b["label"] for b in boxes])
-        if index is not None:
-            box = self.store.move_box(boxes[index]["id"])
-            self.ui.message("Box '%s' removed from '%s'." % (box["label"], place["name"]))
-
-    def place_move_box(self, place_id):
-        place = self.store.get_place(place_id)
-        boxes = self.store.place_boxes(place_id)
-        if not boxes:
-            self.ui.message("This Place has no boxes.")
-            return
-        index = self.ui.choose("Move which box from '%s'?" % place["name"], [b["label"] for b in boxes])
-        if index is None:
-            return
-        box = boxes[index]
-        places = [p for p in self.store.list_places() if p["id"] != place_id]
-        choices = ["Remove from Place"] + [p["name"] for p in places]
-        destination = self.ui.choose("Move '%s' to" % box["label"], choices)
-        if destination is not None:
-            new_place_id = None if destination == 0 else places[destination - 1]["id"]
-            self.store.move_box(box["id"], new_place_id)
-
-    def edit_place(self, place_id):
-        place = self.store.get_place(place_id)
-        data = self.ui.form("Edit Place", [("name", "Name", place["name"]),
-                                           ("description", "Description", place.get("description", ""))])
-        self.store.update_place(place_id, **data)
-
     def create_box(self):
         data = self.ui.form("Create Box", [("label", "Label", ""), ("description", "Description", "")])
-        place_id = None
-        places = self.store.list_places()
-        if places:
-            index = self.ui.choose("Put the box in which Place?", ["No Place"] + [p["name"] for p in places])
-            if index:
-                place_id = places[index - 1]["id"]
-        box = self.store.create_box(data.get("label"), data.get("description"), place_id=place_id)
-        place = (" in '%s'" % places[index - 1]["name"]) if place_id else ""
-        self.ui.message("Box '%s' created%s." % (box["label"], place))
+        box = self.store.create_box(data.get("label"), data.get("description"))
+        self.ui.message("Box '%s' created." % box["label"])
         return box
 
     def boxes_menu(self):
@@ -765,16 +665,6 @@ class App(object):
         self.ui.message(text)
         return item
 
-    def import_place(self):
-        path = self.ui.pick_text_file()
-        if not path:
-            return None
-        place = import_place_file(self.store, path)
-        self.ui.message("Place '%s' imported with %d box(es) and %d item(s)." %
-                        (place["name"], len(self.store.place_boxes(place["id"])),
-                         sum(len(self.store.box_items(b["id"])) for b in self.store.place_boxes(place["id"]))))
-        return place
-
     def import_image(self):
         item = self.pick_item("Add images to which item?")
         if item:
@@ -911,7 +801,7 @@ class App(object):
             return
         if index == 2:
             if not self.ui.confirm(
-                    "Reset ALL data in %s? Places, boxes, items, photos, custom types, trash and exports will be deleted. "
+                    "Reset ALL data in %s? Boxes, items, photos, custom types, trash and exports will be deleted. "
                     "A backup will be saved first and kept in the Backups folder." % current):
                 return
             self.reset_data()
@@ -933,7 +823,7 @@ class App(object):
         self.store = Store(root)
         self.ui.skip = hidden_dirs(self.store)
         self.filters = {}
-        self.ui.message("Data folder reset. Previous places, boxes, items and types are in backup %s."
+        self.ui.message("Data folder reset. Previous boxes, items and types are in backup %s."
                         % os.path.basename(safety))
 
     def switch_data_dir(self, folder, remember=True):
@@ -956,8 +846,8 @@ class App(object):
 
 def hidden_dirs(store):
     """App folders that file pickers should not show (exports stay visible)."""
-    return (store.places_dir, store.boxes_dir, store.items_dir, store.images_dir, store.trash_dir,
-            store.backups_dir, store.meta_dir)
+    return (store.boxes_dir, store.items_dir, store.images_dir, store.trash_dir, store.backups_dir,
+            store.meta_dir)
 
 
 def describe_filters(store, filters):
@@ -996,20 +886,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Keep your stuff sorted in boxes.")
     parser.add_argument("--data", help="data folder (default: as chosen in Settings, or StuffData "
                                        "next to the app; also STUFFAPP_DATA)")
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--console", "--cli", action="store_true",
-                      help="use the text menus (CLI), even inside Pythonista or with a desktop")
-    mode.add_argument("--desktop", "--gui", action="store_true",
-                      help="use the Tkinter desktop window (fails if Tkinter or a display is missing)")
+    parser.add_argument("--console", action="store_true",
+                        help="use text menus even inside Pythonista")
     args = parser.parse_args(argv)
 
     store = Store(args.data or default_data_dir())
-    if args.desktop:
-        from .desktop import run as run_desktop
-        if not run_desktop(store):
-            parser.exit(1, "The desktop app needs Tkinter and a graphical display. "
-                           "Install Tkinter (e.g. python3-tk) or start the text menus with --console.\n")
-        return
     if not args.console:
         try:
             from . import touch

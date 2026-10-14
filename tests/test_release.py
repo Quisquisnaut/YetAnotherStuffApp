@@ -29,7 +29,6 @@ class WindowsReleaseTest(unittest.TestCase):
         with zipfile.ZipFile(path) as archive:
             names = archive.namelist()
             bat = archive.read("YetAnotherStuffApp/Start Stuff App.bat")
-            cli_bat = archive.read("YetAnotherStuffApp/Start Stuff App (text menus).bat")
         for name in ("main.py", "README.md", "WINDOWS-SETUP.txt", "stuffapp/__init__.py",
                      "stuffapp/app.py", "stuffapp/desktop.py"):
             self.assertIn("YetAnotherStuffApp/" + name, names)
@@ -39,10 +38,6 @@ class WindowsReleaseTest(unittest.TestCase):
         self.assertIn(b"\r\n", bat)
         self.assertNotIn(b"\n", bat.replace(b"\r\n", b""))
         self.assertIn(b"main.py", bat)
-        self.assertNotIn(b"--console", bat)
-        self.assertIn(b"\r\n", cli_bat)
-        self.assertNotIn(b"\n", cli_bat.replace(b"\r\n", b""))
-        self.assertEqual(cli_bat.count(b"main.py --console %*"), 2)
 
 
 if __name__ == "__main__":

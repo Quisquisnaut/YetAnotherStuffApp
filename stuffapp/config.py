@@ -17,7 +17,7 @@ PYTHONISTA_ICLOUD = os.path.expanduser(
     "~/Library/Mobile Documents/iCloud~com~omz-software~Pythonista3/Documents")
 
 DATA_FOLDER_NAME = "StuffData"
-_DATA_SUBDIRS = ("places", "boxes", "items", "images", "meta")
+_DATA_SUBDIRS = ("boxes", "items", "images", "meta")
 
 
 def load_settings(path=None):
@@ -50,7 +50,7 @@ def icloud_data_dir():
 
 
 def has_data(folder):
-    for sub in ("places", "boxes", "items"):
+    for sub in ("boxes", "items"):
         path = os.path.join(folder, sub)
         if os.path.isdir(path) and any(n.endswith(".json") for n in os.listdir(path)):
             return True
@@ -58,7 +58,7 @@ def has_data(folder):
 
 
 def copy_data(source, target):
-    """Copy places, boxes, items, images and item types to an empty ``target``."""
+    """Copy boxes, items, images and item types from ``source`` to an empty ``target``."""
     if has_data(target):
         raise ValueError("The target folder already contains data.")
     for sub in _DATA_SUBDIRS:
