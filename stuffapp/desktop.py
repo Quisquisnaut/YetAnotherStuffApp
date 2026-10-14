@@ -2,8 +2,71 @@
 
 from . import export
 from .app import startup
-from .importer import import_item_file
+from .importer import import_item_file, import_place_file
 from .storage import EXTRA_PREFIX, StorageError
+
+ALL = "all"
+NO_PLACE = "noplace"
+NO_PLACE_LABEL = "(no Place)"
+
+
+def tree_rows(store):
+    """``[(parent_iid, iid, text)]`` for the left tree: every Place with its
+    boxes, then the boxes that are in no Place."""
+    rows = [("", ALL, "All boxes")]
+    boxes = store.list_boxes()
+    counts = store.box_counts()
+    places = store.list_places()
+    place_ids = set(place["id"] for place in places)
+
+    def box_row(parent, box):
+        return (parent, "box:" + box["id"], "%s (%d)" % (box["label"], counts.get(box["id"], 0)))
+
+    for place in places:
+        rows.append(("", "place:" + place["id"], "Place: %s" % place["name"]))
+        rows.extend(box_row("place:" + place["id"], box) for box in boxes if box.get("place") == place["id"])
+    loose = [box for box in boxes if box.get("place") not in place_ids]
+    if places and loose:
+        rows.append(("", NO_PLACE, "Boxes without a Place"))
+        rows.extend(box_row(NO_PLACE, box) for box in loose)
+    else:
+        rows.extend(box_row("", box) for box in loose)
+    return rows
+
+
+def parse_selection(iid):
+    """``(kind, id)`` of a tree iid; kind is all, place, noplace or box."""
+    if not iid or iid == ALL:
+        return ALL, None
+    if iid == NO_PLACE:
+        return NO_PLACE, None
+    kind, _sep, obj_id = iid.partition(":")
+    return kind, obj_id
+
+
+def selection_items(store, iid, text=""):
+    """The items shown for a tree selection, filtered by the search text."""
+    kind, obj_id = parse_selection(iid)
+    items = store.search_items(text=text)
+    if kind == ALL:
+        return items
+    boxes = store.list_boxes()
+    if kind == "box":
+        box_ids = {obj_id}
+    elif kind == "place":
+        box_ids = set(box["id"] for box in boxes if box.get("place") == obj_id)
+    else:
+        place_ids = set(place["id"] for place in store.list_places())
+        box_ids = set(box["id"] for box in boxes if box.get("place") not in place_ids)
+    return [item for item in items if item.get("box") in box_ids]
+
+
+def item_form_rows(store, item=None, type_id=None):
+    """``[(key, label, kind, value)]`` for the item window: the name first,
+    then the fields of the item's type (or of type ``type_id``)."""
+    item = item or {}
+    rows = [("name", "Name", "line", item.get("name", ""))]
+    return rows + store.item_fields(item, type_id, leftovers=False)
 
 
 class DesktopApp(object):
@@ -15,7 +78,6 @@ class DesktopApp(object):
         self.filedialog = filedialog
         self.messagebox = messagebox
         self.simpledialog = simpledialog
-        self.box_ids = []
         self.item_ids = []
         self.fields = {}
         self.root.title("YetAnotherStuffApp")
@@ -34,12 +96,14 @@ class DesktopApp(object):
         toolbar = ttk.Frame(self.root, padding=8)
         toolbar.grid(row=0, column=0, sticky="ew")
         buttons = (
+            ("New place", self.create_place),
             ("New box", self.create_box),
             ("New item", self.create_item),
             ("Edit", self.edit_selected),
             ("Move", self.move_selected),
             ("Delete", self.delete_selected),
             ("Import item", self.import_item),
+            ("Import place", self.import_place),
             ("Refresh", self.refresh),
         )
         for text, action in buttons:
@@ -58,7 +122,7 @@ class DesktopApp(object):
         panes.add(right, weight=4)
         left.rowconfigure(1, weight=1)
         left.columnconfigure(0, weight=1)
-        ttk.Label(left, text="Boxes").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        ttk.Label(left, text="Places and boxes").grid(row=0, column=0, sticky="w", pady=(0, 4))
         self.box_tree = ttk.Treeview(left, show="tree", selectmode="browse")
         self.box_tree.grid(row=1, column=0, sticky="nsew")
         self.box_tree.bind("<<TreeviewSelect>>", lambda _event: self.refresh_items())
@@ -67,8 +131,15 @@ class DesktopApp(object):
         self.box_tree.configure(yscrollcommand=box_scroll.set)
         box_actions = ttk.Frame(left)
         box_actions.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
-        ttk.Button(box_actions, text="Edit box", command=self.edit_box).pack(side="left")
+        ttk.Button(box_actions, text="Edit", command=self.edit_box).pack(side="left")
         ttk.Button(box_actions, text="Delete box", command=self.delete_box).pack(side="left", padx=(6, 0))
+        export_actions = ttk.Frame(left)
+        export_actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        ttk.Button(export_actions, text="Export PDF",
+                   command=lambda: self._call(lambda: self.export_selected("pdf"))).pack(side="left")
+        ttk.Button(export_actions, text="Export Markdown",
+                   command=lambda: self._call(lambda: self.export_selected("markdown"))).pack(
+            side="left", padx=(6, 0))
 
         right.rowconfigure(0, weight=3)
         right.rowconfigure(1, weight=2)
@@ -95,12 +166,25 @@ class DesktopApp(object):
         self.status.grid(row=2, column=0, sticky="ew")
         self.root.rowconfigure(2, weight=0)
 
-    def _selected_box(self):
+    def _selection(self):
         selection = self.box_tree.selection()
-        if not selection:
-            return None
-        index = self.box_tree.index(selection[0]) - 1
-        return self.box_ids[index] if 0 <= index < len(self.box_ids) else None
+        return parse_selection(selection[0] if selection else None)
+
+    def _selected_box(self):
+        kind, obj_id = self._selection()
+        return obj_id if kind == "box" else None
+
+    def _selected_place(self):
+        """The selected Place, or the Place of the selected box."""
+        kind, obj_id = self._selection()
+        if kind == "place":
+            return obj_id
+        if kind == "box":
+            try:
+                return self.store.get_box(obj_id).get("place")
+            except StorageError:
+                return None
+        return None
 
     def _selected_item(self):
         selection = self.item_tree.selection()
@@ -115,17 +199,17 @@ class DesktopApp(object):
         except (OSError, ValueError, StorageError) as exc:
             self.messagebox.showerror("YetAnotherStuffApp", str(exc), parent=self.root)
 
-    def refresh(self):
-        selected = self._selected_box()
+    def refresh(self, select=None):
+        selection = self.box_tree.selection()
+        selected = select or (selection[0] if selection else ALL)
         for row in self.box_tree.get_children():
             self.box_tree.delete(row)
-        self.box_tree.insert("", "end", iid="all", text="All boxes")
-        self.box_ids = []
-        for box in self.store.list_boxes():
-            self.box_ids.append(box["id"])
-            self.box_tree.insert("", "end", iid="box_%d" % len(self.box_ids), text=box["label"])
-        box_id = next((i + 1 for i, value in enumerate(self.box_ids) if value == selected), 0)
-        self.box_tree.selection_set("box_%d" % box_id if box_id else "all")
+        for parent, iid, text in tree_rows(self.store):
+            self.box_tree.insert(parent, "end", iid=iid, text=text, open=True)
+        if not self.box_tree.exists(selected):
+            selected = ALL
+        self.box_tree.selection_set(selected)
+        self.box_tree.see(selected)
         self.refresh_items()
 
     def refresh_items(self):
@@ -134,19 +218,17 @@ class DesktopApp(object):
         for row in self.item_tree.get_children():
             self.item_tree.delete(row)
         self.item_ids = []
-        box_id = self._selected_box()
-        items = self.store.search_items(text=self.query.get())
-        if box_id:
-            items = [item for item in items if item.get("box") == box_id]
-        boxes = {box["id"]: box["label"] for box in self.store.list_boxes()}
+        selection = self.box_tree.selection()
+        iid = selection[0] if selection else ALL
+        items = selection_items(self.store, iid, self.query.get())
         for index, item in enumerate(items):
             item_type = self.store.item_type(item)
             price = export.format_price(item.get("price")) or ""
             self.item_ids.append(item["id"])
             self.item_tree.insert("", "end", iid="item_%d" % index, values=(
                 item["name"], item_type["name"], item.get("location", ""), price))
-        self.status.configure(text="%d item(s)  ·  %s" % (
-            len(items), boxes.get(box_id, "All boxes")))
+        where = self.box_tree.item(iid, "text") if self.box_tree.exists(iid) else "All boxes"
+        self.status.configure(text="%d item(s)  ·  %s" % (len(items), where))
         self._set_details("")
 
     def show_details(self, _event=None):
@@ -154,8 +236,12 @@ class DesktopApp(object):
         if not item:
             return self._set_details("")
         box = self.store.box_of_item(item["id"])
+        place = self.store.place_of_box(box["id"]) if box else None
         lines = ["%s" % item["name"], "Type: %s" % self.store.item_type(item)["name"],
-                 "Box: %s" % (box["label"] if box else "?"), "ID: %s" % item["id"]]
+                 "Box: %s" % (box["label"] if box else "?")]
+        if place:
+            lines.append("Place: %s" % place["name"])
+        lines.append("ID: %s" % item["id"])
         for _key, label, _kind, value in self.store.item_fields(item):
             if value not in (None, "", []):
                 if isinstance(value, list):
@@ -169,30 +255,114 @@ class DesktopApp(object):
         self.detail.insert("1.0", text)
         self.detail.configure(state="disabled")
 
-    def create_box(self):
-        self._box_dialog()
+    def create_place(self):
+        self._place_dialog()
 
-    def edit_box(self):
-        box_id = self._selected_box()
-        if not box_id:
-            return self.messagebox.showinfo("Boxes", "Select a box first.", parent=self.root)
-        self._box_dialog(self.store.get_box(box_id))
-
-    def _box_dialog(self, box=None):
-        label = self.simpledialog.askstring("Box", "Label", initialvalue=(box or {}).get("label", ""),
-                                            parent=self.root)
-        if label is None:
+    def _place_dialog(self, place=None):
+        name = self.simpledialog.askstring("Place", "Name", initialvalue=(place or {}).get("name", ""),
+                                           parent=self.root)
+        if name is None:
             return
-        description = self.simpledialog.askstring("Box", "Description",
-                                                  initialvalue=(box or {}).get("description", ""),
+        description = self.simpledialog.askstring("Place", "Description",
+                                                  initialvalue=(place or {}).get("description", ""),
                                                   parent=self.root)
         if description is None:
-            description = (box or {}).get("description", "")
-        if box:
-            self.store.update_box(box["id"], label=label, description=description)
+            description = (place or {}).get("description", "")
+        try:
+            if place:
+                place = self.store.update_place(place["id"], name=name, description=description)
+            else:
+                place = self.store.create_place(name, description)
+        except StorageError as exc:
+            return self.messagebox.showerror("Place", str(exc), parent=self.root)
+        self.refresh(select="place:" + place["id"])
+
+    def create_box(self):
+        self._box_dialog(place_id=self._selected_place())
+
+    def edit_box(self):
+        """Edit the selected box (label, description, Place) or Place."""
+        kind, obj_id = self._selection()
+        if kind == "place":
+            return self._place_dialog(self.store.get_place(obj_id))
+        if kind != "box":
+            return self.messagebox.showinfo("Edit", "Select a Place or a box first.", parent=self.root)
+        self._box_dialog(self.store.get_box(obj_id))
+
+    def _box_dialog(self, box=None, place_id=None):
+        tk, ttk = self.tk, self.ttk
+        window = tk.Toplevel(self.root)
+        window.title("Edit box" if box else "New box")
+        window.transient(self.root)
+        window.grab_set()
+        window.columnconfigure(1, weight=1)
+        places = self.store.list_places()
+        place_names = [NO_PLACE_LABEL] + [place["name"] for place in places]
+        current = box.get("place") if box else place_id
+        index = next((i + 1 for i, place in enumerate(places) if place["id"] == current), 0)
+        label = ttk.Entry(window, width=40)
+        label.insert(0, (box or {}).get("label", ""))
+        description = ttk.Entry(window, width=40)
+        description.insert(0, (box or {}).get("description", ""))
+        place_value = tk.StringVar(value=place_names[index])
+        place_combo = ttk.Combobox(window, textvariable=place_value, values=place_names,
+                                   state="readonly", width=38)
+        for row, (text, widget) in enumerate((("Label", label), ("Description", description),
+                                              ("Place", place_combo))):
+            ttk.Label(window, text=text).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+            widget.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        label.focus_set()
+
+        def save():
+            chosen = place_names.index(place_value.get())
+            new_place = places[chosen - 1]["id"] if chosen else None
+            try:
+                if box:
+                    saved = self.store.update_box(box["id"], label=label.get(), description=description.get())
+                    if box.get("place") != new_place:
+                        saved = self.store.move_box(box["id"], new_place)
+                else:
+                    saved = self.store.create_box(label.get(), description.get(), place_id=new_place)
+            except (OSError, ValueError, StorageError) as exc:
+                self.messagebox.showerror("Box", str(exc), parent=window)
+                return
+            window.destroy()
+            self.refresh(select="box:" + saved["id"])
+
+        footer = ttk.Frame(window, padding=10)
+        footer.grid(row=3, column=0, columnspan=2, sticky="e")
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(6, 0))
+        ttk.Button(footer, text="Save", command=save).pack(side="right")
+        window.bind("<Return>", lambda _event: save())
+        window.bind("<Escape>", lambda _event: window.destroy())
+
+    def export_selected(self, fmt):
+        """Export the selected Place or box to PDF or Markdown."""
+        kind, obj_id = self._selection()
+        if kind == "place":
+            func = export.export_place_pdf if fmt == "pdf" else export.export_place_markdown
+        elif kind == "box":
+            func = export.export_box_pdf if fmt == "pdf" else export.export_box_markdown
         else:
-            self.store.create_box(label, description)
-        self.refresh()
+            return self.messagebox.showinfo("Export", "Select a Place or a box first.", parent=self.root)
+        path = func(self.store, obj_id)
+        self.messagebox.showinfo("Export", "Saved to:\n%s" % path, parent=self.root)
+
+    def import_place(self):
+        path = self.filedialog.askopenfilename(
+            parent=self.root, title="Import place",
+            filetypes=(("Place exports", "*.md *.markdown *.json"), ("All files", "*.*")))
+        if not path:
+            return
+        try:
+            place = import_place_file(self.store, path)
+        except (OSError, ValueError, StorageError) as exc:
+            return self.messagebox.showerror("Import place", str(exc), parent=self.root)
+        boxes = self.store.place_boxes(place["id"])
+        self.refresh(select="place:" + place["id"])
+        self.messagebox.showinfo("Import place", "Place '%s' imported with %d box(es) and %d item(s)." % (
+            place["name"], len(boxes), sum(len(self.store.box_items(box["id"])) for box in boxes)),
+            parent=self.root)
 
     def delete_box(self):
         box_id = self._selected_box()
@@ -264,14 +434,12 @@ class DesktopApp(object):
                 child.destroy()
             widgets.clear()
             item_type = type_by_name[type_value.get()]
-            rows = self.store.item_fields(item or {}, item_type["id"], leftovers=False)
+            rows = item_form_rows(self.store, item, item_type["id"])
             for index, (key, label, kind, value) in enumerate(rows):
                 ttk.Label(body, text=label).grid(row=index, column=0, sticky="nw", padx=(0, 12), pady=5)
                 initial = previous.get(key)
                 if initial is None:
                     initial = value
-                if key == "name":
-                    initial = item["name"] if item else ""
                 if kind in ("text", "links"):
                     widget = tk.Text(body, height=3 if kind == "text" else 2, width=48, wrap="word")
                     if isinstance(initial, list):

@@ -1,5 +1,5 @@
 @echo off
-rem Start YetAnotherStuffApp (text menus). Needs Python 3 from python.org or the Microsoft Store.
+rem Start YetAnotherStuffApp (desktop window; text menus if Tkinter is missing). Needs Python 3 from python.org or the Microsoft Store.
 cd /d "%~dp0"
 title Stuff App
 set PYTHONUTF8=1

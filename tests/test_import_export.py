@@ -123,6 +123,16 @@ class ImportTests(TempStoreTestCase):
 
         self.assertEqual([existing["id"] for existing in self.store.box_items(box["id"])], [item["id"]])
 
+    def test_place_markdown_export_is_not_imported_as_item(self):
+        place = self.store.create_place("Home")
+        box = self.store.create_box("Tools", place_id=place["id"])
+        item = self.store.create_item("Drill", box["id"])
+        path = export.export_place_markdown(self.store, place["id"])
+
+        with self.assertRaisesRegex(StorageError, "Place export"):
+            import_item_file(self.store, path, box_id=box["id"])
+
+        self.assertEqual([existing["id"] for existing in self.store.list_items()], [item["id"]])
 
 
 class ExportTests(TempStoreTestCase):
