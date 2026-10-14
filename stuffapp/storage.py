@@ -1,8 +1,9 @@
-"""JSON-file based storage for boxes, items and item images.
+"""JSON-file based storage for places, boxes, items and item images.
 
 Layout of the data directory::
 
-    <root>/boxes/<box_id>.json
+    <root>/places/<place_id>.json
+    <root>/boxes/<box_id>.json          (optional ``"place"`` = id of place)
     <root>/items/<item_id>.json          (``"box"`` = id of its box)
     <root>/images/<item_id>/<image>.jpg
     <root>/meta/types.json               item types made by the user
@@ -558,6 +559,7 @@ def default_data_dir():
 class Store(object):
     def __init__(self, root=None):
         self.root = os.path.abspath(root or default_data_dir())
+        self.places_dir = os.path.join(self.root, "places")
         self.boxes_dir = os.path.join(self.root, "boxes")
         self.items_dir = os.path.join(self.root, "items")
         self.images_dir = os.path.join(self.root, "images")
@@ -569,7 +571,7 @@ class Store(object):
         self._types_cache = (None, [], [])
         self.problems = []  # damaged files that could not be repaired
         self.repaired = []  # damaged files repaired from their .bak copy
-        for path in (self.boxes_dir, self.items_dir, self.images_dir, self.exports_dir,
+        for path in (self.places_dir, self.boxes_dir, self.items_dir, self.images_dir, self.exports_dir,
                      self.trash_dir, self.backups_dir, self.meta_dir):
             if not os.path.isdir(path):
                 os.makedirs(path)
@@ -618,10 +620,15 @@ class Store(object):
             data["images"] = clean
             if not isinstance(data.get("box"), str) or not _ID_RE.match(data["box"]):
                 data["box"] = None
-        else:
+        elif os.path.dirname(path) == self.boxes_dir:
             data["label"] = _one_line(data.get("label")) or "(no label)"
             data["description"] = _clean_str(data.get("description"))
+            if not isinstance(data.get("place"), str) or not _ID_RE.match(data["place"]):
+                data["place"] = None
             data.pop("fields", None)  # (box custom fields of an earlier version)
+        else:
+            data["name"] = _one_line(data.get("name")) or "(no name)"
+            data["description"] = _clean_str(data.get("description"))
         return data
 
     def _read(self, path):
@@ -677,6 +684,9 @@ class Store(object):
     def _box_path(self, box_id):
         return os.path.join(self.boxes_dir, _check_id(box_id) + ".json")
 
+    def _place_path(self, place_id):
+        return os.path.join(self.places_dir, _check_id(place_id) + ".json")
+
     def _item_path(self, item_id):
         return os.path.join(self.items_dir, _check_id(item_id) + ".json")
 
@@ -700,7 +710,12 @@ class Store(object):
         """
         self.problems = []
         self.repaired = []
+        places = dict((p["id"], p) for p in self._list_dir(self.places_dir))
         boxes = dict((b["id"], b) for b in self._list_dir(self.boxes_dir))
+        for box in boxes.values():
+            if box.get("place") not in places and box.get("place") is not None:
+                box["place"] = None
+                self._write(self._box_path(box["id"]), box)
         items = self._list_dir(self.items_dir)
         legacy = {}
         for box in boxes.values():
@@ -728,15 +743,73 @@ class Store(object):
                 return box
         return self.create_box(UNSORTED_LABEL, "Items whose box was missing.")
 
+    # -------------------------------------------------------------- places
+    def create_place(self, name, description=""):
+        name = _one_line(name)
+        if not name:
+            raise StorageError("A place needs a name.")
+        place = {
+            "id": _new_id(),
+            "name": name,
+            "description": _clean_str(description),
+            "created": _now(),
+            "modified": _now(),
+        }
+        self._write(self._place_path(place["id"]), place)
+        return place
+
+    def get_place(self, place_id):
+        path = self._place_path(place_id)
+        if not os.path.exists(path):
+            raise StorageError("No place with id %s" % place_id)
+        return self._read(path)
+
+    def place_exists(self, place_id):
+        try:
+            return os.path.exists(self._place_path(place_id))
+        except StorageError:
+            return False
+
+    def list_places(self):
+        places = self._list_dir(self.places_dir)
+        return sorted(places, key=lambda p: p.get("name", "").lower())
+
+    def update_place(self, place_id, **changes):
+        place = self.get_place(place_id)
+        for key, value in changes.items():
+            if key not in ("name", "description"):
+                raise StorageError("Unknown place field: %s" % key)
+            value = _one_line(value) if key == "name" else _clean_str(value)
+            if key == "name" and not value:
+                raise StorageError("A place needs a name.")
+            place[key] = value
+        place["modified"] = _now()
+        self._write(self._place_path(place_id), place)
+        return place
+
+    def place_boxes(self, place_id):
+        self.get_place(place_id)
+        return [b for b in self.list_boxes() if b.get("place") == place_id]
+
+    def place_of_box(self, box_id):
+        box = self.get_box(box_id)
+        try:
+            return self.get_place(box.get("place") or "missing")
+        except StorageError:
+            return None
+
     # --------------------------------------------------------------- boxes
-    def create_box(self, label, description=""):
+    def create_box(self, label, description="", place_id=None):
         label = _one_line(label)
         if not label:
             raise StorageError("A box needs a label.")
+        if place_id:
+            self.get_place(place_id)
         box = {
             "id": _new_id(),
             "label": label,
             "description": _clean_str(description),
+            "place": place_id,
             "created": _now(),
             "modified": _now(),
         }
@@ -799,6 +872,17 @@ class Store(object):
         for item in self.list_items():
             counts[item.get("box")] = counts.get(item.get("box"), 0) + 1
         return counts
+
+    def move_box(self, box_id, place_id=None):
+        """Move a box into a place, or remove it from its current place."""
+        box = self.get_box(box_id)
+        if place_id:
+            self.get_place(place_id)
+        if box.get("place") != place_id:
+            box["place"] = place_id
+            box["modified"] = _now()
+            self._write(self._box_path(box_id), box)
+        return box
 
     def move_item(self, item_id, box_id):
         """Put an item in another box ("Add Stuff to Box")."""
