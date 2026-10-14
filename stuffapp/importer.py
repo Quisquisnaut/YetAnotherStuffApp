@@ -117,6 +117,7 @@ IGNORED_KEYS = {"id", "created", "modified"}
 _FIELD_RE = re.compile(r"^\s*(?:[-*+]\s+)?\**\s*([^\W\d_][\w ()\u20ac/.'-]*?)\s*(?::\**|\**\s*:)\s*(.*)$")
 _HEADING_RE = re.compile(r"^\s*#\s+(.+?)\s*$")
 _MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)\)")
+_BOX_EXPORT_RE = re.compile(r"^# Box: .+\r?\n\r?\nID: [0-9a-f]{12}(?:\r?\n|$)", re.I)
 
 
 def _split_values(text):
@@ -224,6 +225,8 @@ def parse_item_file(path, extra_kinds=None):
         if not isinstance(data, dict) or not data.get("name"):
             raise StorageError("The JSON file has no item name.")
         return data
+    if _BOX_EXPORT_RE.match(text):
+        raise StorageError("This is a box export, not an item file. Import an item export instead.")
     return parse_item_text(text, extra_kinds)
 
 

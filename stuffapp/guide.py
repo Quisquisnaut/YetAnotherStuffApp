@@ -214,8 +214,8 @@ If the file names a Box that exists, you are offered that box; otherwise you
 choose one. If the file names a Type that exists, the item gets that type;
 otherwise you choose one. Values for fields the type does not have, and values that do not fit
 their field's kind (e.g. "lots" for a Number), are added to the notes
-(and you are told). A Markdown file exported by this app
-can be imported back.
+(and you are told). A Markdown item export from this app can be imported back. A box export
+contains multiple items and cannot be imported as a single item.
 
 Example:
 
@@ -246,6 +246,9 @@ Nothing is lost by accident:
   something changed) and the last 15 are kept. You can also make one by hand
   and restore any backup. Before a restore, the current data is saved as a
   "before-restore" backup, so a restore can be undone too.
+- Reset data folder (Settings): clears boxes, items, photos, custom types,
+  trash and exports after saving a "before-reset" backup. Existing backups
+  are kept, so the previous data can be restored.
 
 For extra safety copy the "backups" folder to another device from time to
 time."""),

@@ -1,7 +1,10 @@
+import os
+import tempfile
 import unittest
+from unittest.mock import patch
 
 from stuffapp import guide
-from stuffapp.app import App
+from stuffapp.app import App, main
 from stuffapp.ui import ConsoleUI
 from stuffapp.storage import StorageError
 
@@ -16,6 +19,49 @@ from .helpers import TINY_JPEG, TempStoreTestCase
 # 12 Delete.
 # Types: 1 Create a type, 2 Generic, 3 Book, ... then the user's types.
 ITEM_FORM = ["Pan", "", "Cupboard", "", "20", "IKEA", ""]
+
+
+class ConsoleUIStyleTest(unittest.TestCase):
+    def test_terminal_styles_can_be_enabled(self):
+        output = []
+        prompts = []
+        ui = ConsoleUI(input_func=lambda prompt: prompts.append(prompt) or "0",
+                       print_func=lambda *args: output.append(" ".join(map(str, args))),
+                       opener=None, color=True)
+
+        self.assertIsNone(ui.choose("Main menu", ["Boxes"]))
+        self.assertIn("\033[1;36m== Main menu ==\033[0m", output)
+        self.assertTrue(any("  \033[36m 1\033[0m" in line for line in output))
+        self.assertEqual(prompts, ["\033[1;36m> \033[0m"])
+
+    def test_terminal_styles_are_disabled_when_requested(self):
+        output = []
+        prompts = []
+        ui = ConsoleUI(input_func=lambda prompt: prompts.append(prompt) or "0",
+                       print_func=lambda *args: output.append(" ".join(map(str, args))),
+                       opener=None, color=False)
+
+        self.assertIsNone(ui.choose("Main menu", ["Boxes"]))
+        self.assertNotIn("\033", "\n".join(output + prompts))
+
+    def test_no_color_disables_styles(self):
+        output = []
+        with patch.dict(os.environ, {"NO_COLOR": ""}):
+            ui = ConsoleUI(input_func=lambda prompt: "0",
+                           print_func=lambda *args: output.append(" ".join(map(str, args))),
+                           opener=None, color=True)
+
+        self.assertIsNone(ui.choose("Main menu", ["Boxes"]))
+        self.assertNotIn("\033", "\n".join(output))
+
+
+class DesktopLaunchTest(unittest.TestCase):
+    def test_desktop_gui_is_preferred_when_not_forcing_console(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with patch("stuffapp.desktop.run", return_value=True) as run_gui:
+                main(["--data", folder])
+
+            self.assertEqual(run_gui.call_args[0][0].root, os.path.abspath(folder))
 
 
 class ScriptedApp(TempStoreTestCase):

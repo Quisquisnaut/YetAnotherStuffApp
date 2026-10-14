@@ -2,7 +2,9 @@ import os
 import zipfile
 
 from stuffapp import backup, config
+from stuffapp.app import App
 from stuffapp.storage import StorageError, Store
+from stuffapp.ui import ConsoleUI
 
 from .helpers import TINY_JPEG, TempStoreTestCase
 
@@ -51,6 +53,31 @@ class BackupTests(TempStoreTestCase):
         backup.prune(self.store, keep=2)
         self.assertEqual(len(backup.list_backups(self.store)), 2)
 
+    def test_reset_data_keeps_a_restorable_backup(self):
+        box = self.store.create_box("Attic")
+        item = self.store.create_item("Lamp", box["id"])
+        self.store.add_image_bytes(item["id"], TINY_JPEG)
+        item_type = self.store.create_type("My type")
+        deleted = self.store.create_item("Old lamp", box["id"])
+        self.store.delete_item(deleted["id"])
+        with open(os.path.join(self.store.exports_dir, "old.md"), "w") as fh:
+            fh.write("old export")
+
+        safety = backup.reset_data(self.store)
+        reset_store = Store(self.store.root)
+        self.assertEqual(reset_store.list_boxes(), [])
+        self.assertEqual(reset_store.list_items(), [])
+        self.assertEqual(reset_store.list_trash(), [])
+        self.assertEqual(os.listdir(reset_store.exports_dir), [])
+        self.assertNotIn(item_type["id"], [item_type["id"] for item_type in reset_store.list_types()])
+        self.assertTrue(os.path.isfile(safety))
+
+        backup.restore_backup(reset_store, safety)
+        restored = Store(self.store.root)
+        self.assertEqual(restored.get_item(item["id"])["box"], box["id"])
+        self.assertTrue(os.path.isfile(restored.image_paths(restored.get_item(item["id"]))[0]))
+        self.assertEqual(restored.get_type(item_type["id"])["id"], item_type["id"])
+
 
 class ConfigTests(TempStoreTestCase):
     def test_copy_data_and_settings(self):
@@ -65,3 +92,13 @@ class ConfigTests(TempStoreTestCase):
         settings = os.path.join(self.tmp, "settings.json")
         config.set_data_dir(target, settings_path=settings)
         self.assertEqual(config.load_settings(settings)["data_dir"], target)
+
+    def test_reset_cancellation_keeps_data(self):
+        box = self.store.create_box("Attic")
+        answers = iter(["3", "n"])
+        ui = ConsoleUI(input_func=lambda prompt="": next(answers), print_func=lambda *_: None,
+                       docs_dir=self.tmp, opener=None)
+        App(self.store, ui).settings()
+
+        self.assertEqual([existing["id"] for existing in self.store.list_boxes()], [box["id"]])
+        self.assertEqual(backup.list_backups(self.store), [])

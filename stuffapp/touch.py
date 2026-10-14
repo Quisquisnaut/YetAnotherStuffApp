@@ -1328,6 +1328,9 @@ class SettingsScreen(TableScreen):
                          "subtitle": "Turn on iCloud for Pythonista in the iOS settings"})
         self.show([
             ("Data location", rows),
+            ("Data", [{"title": "Reset this data folder",
+                       "subtitle": "A recovery backup is saved first; existing backups are kept",
+                       "color": DANGER, "accessory": "none", "on_tap": self.on_reset_data}]),
             ("Current folder", [{"title": root, "lines": 0, "color": MUTED}]),
             ("About", [{"title": "YetAnotherStuffApp %s" % __version__, "color": MUTED}]),
         ])
@@ -1339,6 +1342,20 @@ class SettingsScreen(TableScreen):
         if not confirm("Change data location?", "The app will use %s." % folder, "Change"):
             return
         self.app.switch_data_dir(folder, remember)
+
+    @task
+    def on_reset_data(self):
+        root = self.app.store.root
+        if not confirm("Reset data folder?",
+                       "All boxes, items, photos, custom types, trash and exports in %s will be deleted. "
+                       "A backup is saved first and existing backups are kept." % root, "Reset"):
+            return
+        safety = backup.reset_data(self.app.store)
+        self.app.store = Store(root)
+        self.app.filters = {}
+        self.app.refresh_all()
+        info("Data folder reset", "Previous boxes, items and types are in backup %s."
+             % os.path.basename(safety))
 
 
 # ------------------------------------------------------------- controller

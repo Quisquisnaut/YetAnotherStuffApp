@@ -26,6 +26,7 @@ MAX_FILES = 200000
 MAX_TOTAL_BYTES = 8 * 1024 * 1024 * 1024  # protects against "zip bombs"
 MAX_JSON_BYTES = 5 * 1024 * 1024
 _PART_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,99}$")
+RESET_DIRS = ("boxes", "items", "images", "meta", "trash", "exports")
 
 
 def _iter_files(store):
@@ -172,6 +173,36 @@ def restore_backup(store, path):
         # Only now (the backup may be pruned) save the current data.
         safety = create_backup(store, "before-restore")
         _swap_in(store.root, staging)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return safety
+
+
+def reset_data(store):
+    """Clear the data folder after saving a restorable backup.
+
+    Backups are retained. If resetting any directory fails, the original
+    folders are moved back before the error is raised.
+    """
+    safety = create_backup(store, "before-reset")
+    staging = tempfile.mkdtemp(prefix=".reset-", dir=store.root)
+    moved = []
+    try:
+        for sub in RESET_DIRS:
+            current = os.path.join(store.root, sub)
+            old = os.path.join(staging, sub)
+            if os.path.isdir(current):
+                os.rename(current, old)
+                moved.append(sub)
+            os.makedirs(current)
+    except Exception:
+        for sub in reversed(moved):
+            current = os.path.join(store.root, sub)
+            old = os.path.join(staging, sub)
+            if os.path.isdir(current):
+                shutil.rmtree(current)
+            os.rename(old, current)
+        raise
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return safety
