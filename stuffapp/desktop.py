@@ -264,14 +264,13 @@ class DesktopApp(object):
                 child.destroy()
             widgets.clear()
             item_type = type_by_name[type_value.get()]
-            rows = self.store.item_fields(item or {}, item_type["id"], leftovers=False)
+            rows = [("name", "Name", "line", item["name"] if item else "")]
+            rows += self.store.item_fields(item or {}, item_type["id"], leftovers=False)
             for index, (key, label, kind, value) in enumerate(rows):
                 ttk.Label(body, text=label).grid(row=index, column=0, sticky="nw", padx=(0, 12), pady=5)
                 initial = previous.get(key)
                 if initial is None:
                     initial = value
-                if key == "name":
-                    initial = item["name"] if item else ""
                 if kind in ("text", "links"):
                     widget = tk.Text(body, height=3 if kind == "text" else 2, width=48, wrap="word")
                     if isinstance(initial, list):
