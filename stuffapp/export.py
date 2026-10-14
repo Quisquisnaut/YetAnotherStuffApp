@@ -5,14 +5,12 @@ images next to the ``.md`` file (``<name>_images/``) so the links work and
 the file can be imported again with "Import item".
 """
 
-import json
 import os
 import re
 import shutil
 from datetime import datetime
 
 from .pdf import PDFDocument
-from .storage import ITEM_FIELDS
 
 
 def slugify(text, fallback="export"):
@@ -152,61 +150,6 @@ def export_box_markdown(store, box_id, path=None):
     return path
 
 
-def _place_data(store, place_id, image_dir=None, md_dir=None):
-    place = store.get_place(place_id)
-    data = {
-        "format": "YetAnotherStuffApp Place",
-        "version": 1,
-        "name": place["name"],
-        "description": place.get("description", ""),
-        "boxes": [],
-    }
-    parts = ["# Place: %s" % place["name"], ""]
-    if place.get("description"):
-        parts += [place["description"], ""]
-    boxes = store.place_boxes(place_id)
-    parts += ["%d box(es)" % len(boxes), ""]
-    for box in boxes:
-        box_data = {"label": box["label"], "description": box.get("description", ""), "items": []}
-        parts += ["## Box: %s" % box["label"], "", "ID: %s" % box["id"], ""]
-        if box.get("description"):
-            parts += [box["description"], ""]
-        items = store.box_items(box["id"])
-        parts += [_count_line(store, items), ""]
-        for item in items:
-            item_data = dict((key, item[key]) for key in ITEM_FIELDS if key in item)
-            item_data["type"] = item["type"]
-            image_paths = []
-            if image_dir:
-                item_image_dir = os.path.join(image_dir, "%s_%s" % (box["id"], item["id"]))
-                for source, filename in zip(store.image_paths(item), item.get("images") or []):
-                    if os.path.isfile(source):
-                        destination = os.path.join(item_image_dir, filename)
-                        image_paths.append(os.path.relpath(destination, md_dir).replace(os.sep, "/"))
-            item_data["images"] = image_paths
-            box_data["items"].append(item_data)
-            parts += ["---", "", item_markdown(
-                store, item, level=3,
-                image_dir=(os.path.join(image_dir, "%s_%s" % (box["id"], item["id"]))
-                           if image_dir else None),
-                md_dir=md_dir)]
-        data["boxes"].append(box_data)
-    return data, parts
-
-
-def export_place_markdown(store, place_id, path=None):
-    place = store.get_place(place_id)
-    path = path or _export_base(store, place["name"], place["id"]) + ".md"
-    md_dir = os.path.dirname(os.path.abspath(path))
-    image_dir = os.path.splitext(path)[0] + "_images"
-    data, parts = _place_data(store, place_id, image_dir=image_dir, md_dir=md_dir)
-    parts += ["## Import data", "", "```place-data",
-              json.dumps(data, ensure_ascii=False, indent=2), "```", ""]
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(parts))
-    return path
-
-
 # ----------------------------------------------------------------------- pdf
 def _item_pdf(store, doc, item, heading_size=18, show_box=True, images=True):
     doc.heading(item["name"], size=heading_size)
@@ -251,31 +194,6 @@ def export_box_pdf(store, box_id, path=None):
     for item in items:
         doc.rule()
         _item_pdf(store, doc, item, heading_size=15, show_box=False)
-    return doc.save(path)
-
-
-def export_place_pdf(store, place_id, path=None):
-    place = store.get_place(place_id)
-    boxes = store.place_boxes(place_id)
-    path = path or _export_base(store, place["name"], place["id"]) + ".pdf"
-    doc = PDFDocument(title="Place: %s" % place["name"])
-    doc.heading("Place: %s" % place["name"], size=22)
-    doc.text("ID: %s" % place["id"], size=8)
-    if place.get("description"):
-        doc.text(place["description"])
-    doc.text("%d box(es)" % len(boxes), size=10)
-    for index, box in enumerate(boxes):
-        if index:
-            doc.new_page()
-        items = store.box_items(box["id"])
-        doc.heading("Box: %s" % box["label"], size=20)
-        doc.text("ID: %s" % box["id"], size=8)
-        if box.get("description"):
-            doc.text(box["description"])
-        doc.text(_count_line(store, items), size=10)
-        for item in items:
-            doc.rule()
-            _item_pdf(store, doc, item, heading_size=14, show_box=False)
     return doc.save(path)
 
 

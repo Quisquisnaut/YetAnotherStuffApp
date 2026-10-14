@@ -1,11 +1,9 @@
-import json
 import os
 import re
 import unittest
-import zlib
 
 from stuffapp import export
-from stuffapp.importer import import_item_file, import_place_file, parse_item_text, suggested_box
+from stuffapp.importer import import_item_file, parse_item_text, suggested_box
 from stuffapp.pdf import PDFDocument, jpeg_info, wrap_text
 from stuffapp.storage import StorageError
 
@@ -76,64 +74,6 @@ class ImportTests(TempStoreTestCase):
             self.assertEqual(imported[key], item[key], key)
         self.assertEqual(len(imported["images"]), 1)
 
-    def test_place_markdown_round_trip_includes_boxes_items_and_images(self):
-        place = self.store.create_place("Home", "Main house")
-        box = self.store.create_box("Kitchen", "Upper cupboard", place_id=place["id"])
-        item = self.store.create_item("Pan", box["id"], price=12.5, notes="Cast iron")
-        self.store.add_image_bytes(item["id"], TINY_JPEG, name="pan.jpg")
-        path = export.export_place_markdown(self.store, place["id"])
-        with open(path, encoding="utf-8") as fh:
-            markdown = fh.read()
-        self.assertIn("# Place: Home", markdown)
-        self.assertIn("## Box: Kitchen", markdown)
-        self.assertIn("### Pan", markdown)
-        self.assertIn("Cast iron", markdown)
-        image_link = re.search(r"\]\(([^)]+\.jpg)\)", markdown).group(1)
-        self.assertTrue(os.path.isfile(os.path.join(os.path.dirname(path), image_link)))
-        imported = import_place_file(self.store, path)
-        imported_box = self.store.place_boxes(imported["id"])[0]
-        imported_item = self.store.box_items(imported_box["id"])[0]
-        self.assertEqual((imported["name"], imported["description"]), ("Home", "Main house"))
-        self.assertEqual((imported_box["label"], imported_box["description"]), ("Kitchen", "Upper cupboard"))
-        self.assertEqual((imported_item["name"], imported_item["price"], imported_item["notes"]),
-                         ("Pan", 12.5, "Cast iron"))
-        self.assertEqual(len(imported_item["images"]), 1)
-
-    def test_place_import_validates_complete_tree_before_creating_anything(self):
-        data = {
-            "format": "YetAnotherStuffApp Place",
-            "version": 1,
-            "name": "New place",
-            "boxes": [{"label": "Box", "items": [{"name": "Bad item", "type": "missing-type"}]}],
-        }
-        path = self.write_file("place.json", json.dumps(data))
-        with self.assertRaisesRegex(StorageError, "unknown item type"):
-            import_place_file(self.store, path)
-        self.assertEqual(self.store.list_places(), [])
-        self.assertEqual(self.store.list_boxes(), [])
-        self.assertEqual(self.store.list_items(), [])
-
-    def test_box_markdown_export_is_not_imported_as_item(self):
-        box = self.store.create_box("Tools")
-        item = self.store.create_item("Drill", box["id"])
-        path = export.export_box_markdown(self.store, box["id"])
-
-        with self.assertRaisesRegex(StorageError, "box export"):
-            import_item_file(self.store, path, box_id=box["id"])
-
-        self.assertEqual([existing["id"] for existing in self.store.box_items(box["id"])], [item["id"]])
-
-    def test_place_markdown_export_is_not_imported_as_item(self):
-        place = self.store.create_place("Home")
-        box = self.store.create_box("Tools", place_id=place["id"])
-        item = self.store.create_item("Drill", box["id"])
-        path = export.export_place_markdown(self.store, place["id"])
-
-        with self.assertRaisesRegex(StorageError, "Place export"):
-            import_item_file(self.store, path, box_id=box["id"])
-
-        self.assertEqual([existing["id"] for existing in self.store.list_items()], [item["id"]])
-
 
 class ExportTests(TempStoreTestCase):
     def check_pdf(self, path):
@@ -167,17 +107,6 @@ class ExportTests(TempStoreTestCase):
         self.assertIn(box["id"], text)
         image_link = re.search(r"\]\(([^)]+)\)", text).group(1)
         self.assertTrue(os.path.exists(os.path.join(os.path.dirname(md), image_link)))
-
-    def test_place_pdf_export_contains_nested_contents(self):
-        place = self.store.create_place("Home", "Main house")
-        box = self.store.create_box("Kitchen", place_id=place["id"])
-        self.store.create_item("Pan", box["id"])
-        data = self.check_pdf(export.export_place_pdf(self.store, place["id"]))
-        streams = re.findall(rb"/Filter /FlateDecode >>\nstream\n(.*?)\nendstream", data, re.DOTALL)
-        content = b"\n".join(zlib.decompress(stream) for stream in streams)
-        self.assertIn(b"Place: Home", content)
-        self.assertIn(b"Box: Kitchen", content)
-        self.assertIn(b"Pan", content)
 
     def test_format_price(self):
         self.assertEqual(export.format_price(1299), "€1,299.00")

@@ -5,8 +5,7 @@
     python tools/make_release.py --out DIR
 
 The zip holds one folder, ``YetAnotherStuffApp``, with ``main.py``, the
-``stuffapp`` package, ``README.md``, the ``Start Stuff App.bat`` (desktop) and
-``Start Stuff App (text menus).bat`` launchers
+``stuffapp`` package, ``README.md``, the ``Start Stuff App.bat`` launcher
 and ``WINDOWS-SETUP.txt``. Tests, caches and user data are left out.
 """
 
