@@ -1,7 +1,7 @@
 # YetAnotherStuffApp
 An app to keep stuff sorted.
 
-Put your belongings (**items**) into labelled **boxes**. Add photos, the price
+Group labelled **boxes** into named **Places**, and put your belongings (**items**) into the boxes. Add photos, the price
 you paid (in Euro), serial numbers, brands, links and notes. Each item has a **type**
 (Book, Device, Plant, ... or your own) that decides which details it has. Search, filter, and export everything to
 **PDF** or **Markdown**.
@@ -51,6 +51,9 @@ as a release when a `v*` tag is pushed (e.g. `git tag v0.3.0 && git push --tags`
 * **Every item is always in exactly one box.** You choose the box when you create
   or import an item. You can move an item to another box or delete it, but an
   item can never be without a box.
+* A **Place** has a name and an optional description. Places contain Boxes;
+  Items belong only in Boxes, and Places cannot contain other Places. A Box can
+  be unassigned, added to a Place, removed from a Place, or moved to another Place.
 * Every box and every item has its own **internal ID**. IDs are shown in the details
   and in exports, so two identical items are never confused.
 * **You can only delete an empty box.** Delete its items or move them to other boxes
@@ -63,6 +66,10 @@ as a release when a `v*` tag is pushed (e.g. `git tag v0.3.0 && git push --tags`
 * **Create Box**: a box has a label and an optional description. You can edit it,
   delete it (only when empty), and export it to PDF or Markdown with all its items
   and pictures.
+* **Places**: group boxes by location. Export a Place to PDF or Markdown with
+  all its boxes, items, and pictures. Import a Place Markdown export (or a
+  version-1 Place JSON file); the complete Place, Boxes, Items, and image paths
+  are validated before anything is imported.
 * **Create Item**: an item has a **name** and a **type** (both required); all other
   details are optional and depend on the type. It always has a JPEG photo gallery.
   You can edit it, change its type, delete it, and export it to PDF or Markdown.
