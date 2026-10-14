@@ -1,9 +1,13 @@
 """Tkinter desktop interface for Windows, Linux and macOS."""
 
-from . import export
-from .app import startup
+import os
+import webbrowser
+
+from . import backup, config, export
+from .app import KIND_CHOICES, KIND_NAMES, startup
 from .importer import import_item_file
-from .storage import EXTRA_PREFIX, StorageError
+from .images import to_jpeg_bytes
+from .storage import EXTRA_KINDS, EXTRA_PREFIX, SORT_KEYS, StorageError, field_options
 
 
 class DesktopApp(object):
@@ -17,6 +21,7 @@ class DesktopApp(object):
         self.simpledialog = simpledialog
         self.box_ids = []
         self.item_ids = []
+        self.filters = {}
         self.fields = {}
         self.root.title("YetAnotherStuffApp")
         self.root.geometry("1000x680")
@@ -28,6 +33,7 @@ class DesktopApp(object):
 
     def _build(self):
         ttk = self.ttk
+        self._build_menu()
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
 
@@ -40,6 +46,8 @@ class DesktopApp(object):
             ("Move", self.move_selected),
             ("Delete", self.delete_selected),
             ("Import item", self.import_item),
+            ("Filter", self.edit_filters),
+            ("Export", self.export_results),
             ("Refresh", self.refresh),
         )
         for text, action in buttons:
@@ -95,6 +103,38 @@ class DesktopApp(object):
         self.status.grid(row=2, column=0, sticky="ew")
         self.root.rowconfigure(2, weight=0)
 
+    def _build_menu(self):
+        menu = self.tk.Menu(self.root)
+        self.root.configure(menu=menu)
+        file_menu = self.tk.Menu(menu, tearoff=False)
+        menu.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Import item...", command=self.import_item)
+        file_menu.add_command(label="Import images...", command=self.import_image)
+        file_menu.add_command(label="Export all...", command=self.export_all)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.root.destroy)
+        item_menu = self.tk.Menu(menu, tearoff=False)
+        menu.add_cascade(label="Item", menu=item_menu)
+        for label, action in (
+                ("New item", self.create_item), ("Edit item", self.edit_selected),
+                ("Change type...", self.change_type), ("Clone item", self.clone_selected),
+                ("Move item...", self.move_selected), ("Manage images...", self.manage_images),
+                ("Export item...", self.export_selected), ("Delete item", self.delete_selected)):
+            item_menu.add_command(label=label, command=action)
+        box_menu = self.tk.Menu(menu, tearoff=False)
+        menu.add_cascade(label="Box", menu=box_menu)
+        for label, action in (
+                ("New box", self.create_box), ("Edit box", self.edit_box),
+                ("Export box...", self.export_box), ("Delete box", self.delete_box)):
+            box_menu.add_command(label=label, command=action)
+        tools_menu = self.tk.Menu(menu, tearoff=False)
+        menu.add_cascade(label="Tools", menu=tools_menu)
+        for label, action in (
+                ("Reminders", self.show_reminders), ("Trash", self.show_trash),
+                ("Backups", self.show_backups), ("Item types", self.show_types),
+                ("Settings", self.show_settings)):
+            tools_menu.add_command(label=label, command=action)
+
     def _selected_box(self):
         selection = self.box_tree.selection()
         if not selection:
@@ -114,6 +154,62 @@ class DesktopApp(object):
             action()
         except (OSError, ValueError, StorageError) as exc:
             self.messagebox.showerror("YetAnotherStuffApp", str(exc), parent=self.root)
+
+    def _choose(self, title, options):
+        if not options:
+            self.messagebox.showinfo(title, "There are no choices available.", parent=self.root)
+            return None
+        tk, ttk = self.tk, self.ttk
+        window = tk.Toplevel(self.root)
+        window.title(title)
+        window.transient(self.root)
+        window.grab_set()
+        window.geometry("440x360")
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(0, weight=1)
+        listing = tk.Listbox(window, exportselection=False)
+        listing.grid(row=0, column=0, sticky="nsew", padx=(10, 0), pady=10)
+        scrollbar = ttk.Scrollbar(window, orient="vertical", command=listing.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns", pady=10)
+        listing.configure(yscrollcommand=scrollbar.set)
+        for option in options:
+            listing.insert("end", option)
+        selected = [None]
+
+        def accept(_event=None):
+            current = listing.curselection()
+            if current:
+                selected[0] = current[0]
+                window.destroy()
+
+        listing.bind("<Double-1>", accept)
+        footer = ttk.Frame(window, padding=10)
+        footer.grid(row=1, column=0, columnspan=2, sticky="e")
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(6, 0))
+        ttk.Button(footer, text="Select", command=accept).pack(side="right")
+        listing.focus_set()
+        window.wait_window()
+        return selected[0]
+
+    def _ask(self, title, prompt, initial=""):
+        return self.simpledialog.askstring(title, prompt, initialvalue=initial, parent=self.root)
+
+    def _choose_box(self, title, boxes=None, include_all=False):
+        boxes = self.store.list_boxes() if boxes is None else boxes
+        labels = (["All boxes"] if include_all else []) + [
+            "%s (%s)" % (box["label"], box["id"][:6]) for box in boxes]
+        picked = self._choose(title, labels)
+        if picked is None:
+            return None
+        if include_all and picked == 0:
+            return ""
+        return boxes[picked - (1 if include_all else 0)]
+
+    def _item_export(self, title, pdf, markdown):
+        choice = self._choose(title, ["PDF", "Markdown"])
+        if choice is not None:
+            path = (pdf if choice == 0 else markdown)(self.store)
+            self.messagebox.showinfo(title, "Export saved to:\n%s" % path, parent=self.root)
 
     def refresh(self):
         selected = self._selected_box()
@@ -135,9 +231,11 @@ class DesktopApp(object):
             self.item_tree.delete(row)
         self.item_ids = []
         box_id = self._selected_box()
-        items = self.store.search_items(text=self.query.get())
+        filters = dict(self.filters)
+        filters["text"] = self.query.get()
         if box_id:
-            items = [item for item in items if item.get("box") == box_id]
+            filters["box"] = box_id
+        items = self.store.search_items(**filters)
         boxes = {box["id"]: box["label"] for box in self.store.list_boxes()}
         for index, item in enumerate(items):
             item_type = self.store.item_type(item)
@@ -145,8 +243,9 @@ class DesktopApp(object):
             self.item_ids.append(item["id"])
             self.item_tree.insert("", "end", iid="item_%d" % index, values=(
                 item["name"], item_type["name"], item.get("location", ""), price))
-        self.status.configure(text="%d item(s)  ·  %s" % (
-            len(items), boxes.get(box_id, "All boxes")))
+        self.status.configure(text="%d item(s)  ·  %s  ·  total %s" % (
+            len(items), boxes.get(box_id, "All boxes"),
+            export.format_price(self.store.total_value(items)) or "-"))
         self._set_details("")
 
     def show_details(self, _event=None):
@@ -345,6 +444,174 @@ class DesktopApp(object):
                                     parent=self.root):
             self.store.delete_item(item["id"])
             self.refresh_items()
+
+    def clone_selected(self):
+        item = self._selected_item()
+        if not item:
+            return
+        if self.messagebox.askyesno("Clone item", "Make a copy of '%s' in the same box?" % item["name"],
+                                    parent=self.root):
+            clone = self.store.clone_item(item["id"])
+            self.refresh()
+            self._select_item(clone["id"])
+
+    def _select_item(self, item_id):
+        if item_id in self.item_ids:
+            self.item_tree.selection_set("item_%d" % self.item_ids.index(item_id))
+            self.item_tree.see("item_%d" % self.item_ids.index(item_id))
+            self.show_details()
+
+    def change_type(self):
+        item = self._selected_item()
+        if not item:
+            return
+        types = self.store.list_types()
+        labels = [t["name"] for t in types]
+        picked = self._choose("Change item type", labels)
+        if picked is None or types[picked]["id"] == item.get("type"):
+            return
+        new_type = types[picked]
+        lost = self.store.lost_on_type_change(item, new_type["id"])
+        if lost and not self.messagebox.askyesno(
+                "Change item type", "Changing to '%s' deletes these values:\n\n%s\n\nContinue?" %
+                (new_type["name"], ", ".join(lost)), parent=self.root):
+            return
+        self.store.change_item_type(item["id"], new_type["id"])
+        self.refresh_items()
+        self._select_item(item["id"])
+
+    def export_selected(self):
+        item = self._selected_item()
+        if not item:
+            return
+        choice = self._choose("Export item", ["PDF", "Markdown"])
+        if choice is None:
+            return
+        path = (export.export_item_pdf if choice == 0 else export.export_item_markdown)(self.store, item["id"])
+        self.messagebox.showinfo("Export item", "Export saved to:\n%s" % path, parent=self.root)
+
+    def export_box(self):
+        box_id = self._selected_box()
+        if not box_id:
+            return self.messagebox.showinfo("Export box", "Select a box first.", parent=self.root)
+        choice = self._choose("Export box", ["PDF", "Markdown"])
+        if choice is None:
+            return
+        path = (export.export_box_pdf if choice == 0 else export.export_box_markdown)(self.store, box_id)
+        self.messagebox.showinfo("Export box", "Export saved to:\n%s" % path, parent=self.root)
+
+    def export_results(self):
+        items = self._visible_items()
+        if not items:
+            return self.messagebox.showinfo("Export results", "There are no matching items.", parent=self.root)
+        choice = self._choose("Export search results", ["PDF", "PDF without photos", "Markdown"])
+        if choice is None:
+            return
+        if choice == 2:
+            path = export.export_inventory_markdown(self.store, items, title="Search results")
+        else:
+            path = export.export_inventory_pdf(self.store, items, title="Search results", images=choice == 0)
+        self.messagebox.showinfo("Export results", "Export saved to:\n%s" % path, parent=self.root)
+
+    def export_all(self):
+        choice = self._choose("Export all", ["PDF", "PDF without photos", "Markdown"])
+        if choice is None:
+            return
+        if choice == 2:
+            path = export.export_inventory_markdown(self.store)
+        else:
+            path = export.export_inventory_pdf(self.store, images=choice == 0)
+        self.messagebox.showinfo("Export all", "Export saved to:\n%s" % path, parent=self.root)
+
+    def _visible_items(self):
+        filters = dict(self.filters)
+        filters["text"] = self.query.get()
+        box_id = self._selected_box()
+        if box_id:
+            filters["box"] = box_id
+        return self.store.search_items(**filters)
+
+    def edit_filters(self):
+        filters = dict(self.filters)
+        filters["text"] = self.query.get()
+        for key, label in (("location", "Location contains"), ("origin", "Origin contains"),
+                           ("min_price", "Minimum price (€)"), ("max_price", "Maximum price (€)")):
+            value = self._ask("Search filters", label, str(filters.get(key) or ""))
+            if value is not None:
+                filters[key] = value or None
+        boxes = self.store.list_boxes()
+        labels = ["All boxes"] + ["%s (%s)" % (b["label"], b["id"][:6]) for b in boxes]
+        current_box = next((i + 1 for i, b in enumerate(boxes) if b["id"] == filters.get("box")), 0)
+        selected = self._choose("Filter by box", labels)
+        if selected is not None:
+            filters["box"] = boxes[selected - 1]["id"] if selected else None
+        types = self.store.list_types()
+        labels = ["All types"] + [t["name"] for t in types]
+        current_type = next((i + 1 for i, t in enumerate(types) if t["id"] == filters.get("type_id")), 0)
+        selected = self._choose("Filter by type", labels)
+        if selected is not None:
+            filters["type_id"] = types[selected - 1]["id"] if selected else None
+        selected = self._choose("Sort by", list(SORT_KEYS))
+        if selected is not None:
+            filters["sort"] = SORT_KEYS[selected]
+        if self.messagebox.askyesno("Search filters", "Show only items with photos?",
+                                    parent=self.root):
+            filters["with_images"] = True
+        else:
+            filters["with_images"] = False
+        filters.pop("text", None)
+        self.store.search_items(text=filters.get("text", ""), **filters)
+        self.filters = filters
+        self.refresh_items()
+
+    def clear_filters(self):
+        self.filters = {}
+        self.query.set("")
+        self.refresh_items()
+
+    def import_image(self):
+        item = self._selected_item()
+        if not item:
+            item = self._choose_item("Add images to which item?")
+        if not item:
+            return
+        paths = self.filedialog.askopenfilenames(
+            parent=self.root, title="Import images",
+            filetypes=(("Images", "*.jpg *.jpeg *.png *.heic"), ("All files", "*.*")))
+        for path in paths:
+            with open(path, "rb") as fh:
+                self.store.add_image_bytes(item["id"], to_jpeg_bytes(fh.read()), name=os.path.basename(path))
+        if paths:
+            self.refresh_items()
+            self._select_item(item["id"])
+
+    def _choose_item(self, title):
+        items = self.store.list_items()
+        index = self._choose(title, ["%s (%s)" % (i["name"], i["id"][:6]) for i in items])
+        return items[index] if index is not None else None
+
+    def manage_images(self):
+        item = self._selected_item()
+        if not item:
+            return
+        while True:
+            item = self.store.get_item(item["id"])
+            names = item.get("images", [])
+            options = ["Add photos..."] + names
+            index = self._choose("Photos: %s" % item["name"], options)
+            if index is None:
+                return
+            if index == 0:
+                self.import_image()
+                continue
+            filename = names[index - 1]
+            actions = ["Open photo", "Remove photo"]
+            action = self._choose(filename, actions)
+            if action == 0:
+                webbrowser.open(os.path.abspath(self.store.image_path(item["id"], filename)))
+            elif action == 1 and self.messagebox.askyesno(
+                    "Remove photo", "Delete '%s'?" % filename, parent=self.root):
+                self.store.remove_image(item["id"], filename)
 
     def import_item(self):
         path = self.filedialog.askopenfilename(
