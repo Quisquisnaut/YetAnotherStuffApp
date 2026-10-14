@@ -246,8 +246,8 @@ Nothing is lost by accident:
   something changed) and the last 15 are kept. You can also make one by hand
   and restore any backup. Before a restore, the current data is saved as a
   "before-restore" backup, so a restore can be undone too.
-- Reset data folder (Settings): clears boxes, items, photos, custom types,
-  trash and exports after saving a "before-reset" backup. Existing backups
+- Reset data folder (Settings): clears places, boxes, items, photos, custom
+  types, trash and exports after saving a "before-reset" backup. Existing backups
   are kept, so the previous data can be restored.
 
 For extra safety copy the "backups" folder to another device from time to

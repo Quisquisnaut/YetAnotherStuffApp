@@ -118,6 +118,7 @@ _FIELD_RE = re.compile(r"^\s*(?:[-*+]\s+)?\**\s*([^\W\d_][\w ()\u20ac/.'-]*?)\s*
 _HEADING_RE = re.compile(r"^\s*#\s+(.+?)\s*$")
 _MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)\)")
 _BOX_EXPORT_RE = re.compile(r"^# Box: .+\r?\n\r?\nID: [0-9a-f]{12}(?:\r?\n|$)", re.I)
+_PLACE_EXPORT_RE = re.compile(r"^# Place: .+$", re.I | re.M)
 
 
 def _split_values(text):
@@ -227,6 +228,8 @@ def parse_item_file(path, extra_kinds=None):
         return data
     if _BOX_EXPORT_RE.match(text):
         raise StorageError("This is a box export, not an item file. Import an item export instead.")
+    if _PLACE_EXPORT_RE.match(text) and "```place-data" in text:
+        raise StorageError("This is a Place export, not an item file. Use Import Place instead.")
     return parse_item_text(text, extra_kinds)
 
 

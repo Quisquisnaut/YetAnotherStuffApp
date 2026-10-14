@@ -26,7 +26,7 @@ MAX_FILES = 200000
 MAX_TOTAL_BYTES = 8 * 1024 * 1024 * 1024  # protects against "zip bombs"
 MAX_JSON_BYTES = 5 * 1024 * 1024
 _PART_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,99}$")
-RESET_DIRS = ("boxes", "items", "images", "meta", "trash", "exports")
+RESET_DIRS = ("places", "boxes", "items", "images", "meta", "trash", "exports")
 
 
 def _iter_files(store):

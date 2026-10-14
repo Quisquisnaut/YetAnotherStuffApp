@@ -1347,14 +1347,14 @@ class SettingsScreen(TableScreen):
     def on_reset_data(self):
         root = self.app.store.root
         if not confirm("Reset data folder?",
-                       "All boxes, items, photos, custom types, trash and exports in %s will be deleted. "
+                       "All places, boxes, items, photos, custom types, trash and exports in %s will be deleted. "
                        "A backup is saved first and existing backups are kept." % root, "Reset"):
             return
         safety = backup.reset_data(self.app.store)
         self.app.store = Store(root)
         self.app.filters = {}
         self.app.refresh_all()
-        info("Data folder reset", "Previous boxes, items and types are in backup %s."
+        info("Data folder reset", "Previous places, boxes, items and types are in backup %s."
              % os.path.basename(safety))
 
 

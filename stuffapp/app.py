@@ -362,8 +362,15 @@ class App(object):
 
     def create_box(self):
         data = self.ui.form("Create Box", [("label", "Label", ""), ("description", "Description", "")])
-        box = self.store.create_box(data.get("label"), data.get("description"))
-        self.ui.message("Box '%s' created." % box["label"])
+        place_id = None
+        places = self.store.list_places()
+        if places:
+            index = self.ui.choose("Put the box in which Place?", ["No Place"] + [p["name"] for p in places])
+            if index:
+                place_id = places[index - 1]["id"]
+        box = self.store.create_box(data.get("label"), data.get("description"), place_id=place_id)
+        place = (" in '%s'" % places[index - 1]["name"]) if place_id else ""
+        self.ui.message("Box '%s' created%s." % (box["label"], place))
         return box
 
     def boxes_menu(self):
@@ -904,7 +911,7 @@ class App(object):
             return
         if index == 2:
             if not self.ui.confirm(
-                    "Reset ALL data in %s? Boxes, items, photos, custom types, trash and exports will be deleted. "
+                    "Reset ALL data in %s? Places, boxes, items, photos, custom types, trash and exports will be deleted. "
                     "A backup will be saved first and kept in the Backups folder." % current):
                 return
             self.reset_data()
@@ -926,7 +933,7 @@ class App(object):
         self.store = Store(root)
         self.ui.skip = hidden_dirs(self.store)
         self.filters = {}
-        self.ui.message("Data folder reset. Previous boxes, items and types are in backup %s."
+        self.ui.message("Data folder reset. Previous places, boxes, items and types are in backup %s."
                         % os.path.basename(safety))
 
     def switch_data_dir(self, folder, remember=True):
@@ -989,11 +996,20 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Keep your stuff sorted in boxes.")
     parser.add_argument("--data", help="data folder (default: as chosen in Settings, or StuffData "
                                        "next to the app; also STUFFAPP_DATA)")
-    parser.add_argument("--console", action="store_true",
-                        help="use text menus even inside Pythonista")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--console", "--cli", action="store_true",
+                      help="use the text menus (CLI), even inside Pythonista or with a desktop")
+    mode.add_argument("--desktop", "--gui", action="store_true",
+                      help="use the Tkinter desktop window (fails if Tkinter or a display is missing)")
     args = parser.parse_args(argv)
 
     store = Store(args.data or default_data_dir())
+    if args.desktop:
+        from .desktop import run as run_desktop
+        if not run_desktop(store):
+            parser.exit(1, "The desktop app needs Tkinter and a graphical display. "
+                           "Install Tkinter (e.g. python3-tk) or start the text menus with --console.\n")
+        return
     if not args.console:
         try:
             from . import touch

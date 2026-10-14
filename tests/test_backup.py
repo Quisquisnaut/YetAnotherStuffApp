@@ -54,7 +54,8 @@ class BackupTests(TempStoreTestCase):
         self.assertEqual(len(backup.list_backups(self.store)), 2)
 
     def test_reset_data_keeps_a_restorable_backup(self):
-        box = self.store.create_box("Attic")
+        place = self.store.create_place("House")
+        box = self.store.create_box("Attic", place_id=place["id"])
         item = self.store.create_item("Lamp", box["id"])
         self.store.add_image_bytes(item["id"], TINY_JPEG)
         item_type = self.store.create_type("My type")
@@ -65,6 +66,7 @@ class BackupTests(TempStoreTestCase):
 
         safety = backup.reset_data(self.store)
         reset_store = Store(self.store.root)
+        self.assertEqual(reset_store.list_places(), [])
         self.assertEqual(reset_store.list_boxes(), [])
         self.assertEqual(reset_store.list_items(), [])
         self.assertEqual(reset_store.list_trash(), [])

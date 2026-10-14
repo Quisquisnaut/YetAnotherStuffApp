@@ -11,17 +11,25 @@ It uses only the Python 3 standard library, so there is nothing to install. It r
 | Platform | How to run | User interface |
 |---|---|---|
 | iPhone / iPad – **Pythonista 3** | copy `main.py` and the `stuffapp` folder into Pythonista (or iCloud), open `main.py`, tap ▶ | full touch interface: lists, forms, photo gallery, camera / Photos / Files pickers, Quick Look / Share |
-| Windows | double-click `Start Stuff App.bat` (see [Windows quick setup](#windows-quick-setup)) or `py main.py` | desktop GUI (Tkinter) |
-| Linux / macOS | `python3 main.py` | desktop GUI (Tkinter) |
+| Windows | double-click `Start Stuff App.bat` (see [Windows quick setup](#windows-quick-setup)) or `py main.py --desktop` | desktop GUI (Tkinter) |
+| Windows | double-click `Start Stuff App (text menus).bat` or `py main.py --console` | text menus (CLI) |
+| Linux / macOS | `python3 main.py --desktop` | desktop GUI (Tkinter) |
+| Linux / macOS | `python3 main.py --console` | text menus (CLI) |
 | Android – Termux or Pydroid 3 | `python main.py` / open `main.py` and run it | text menus |
 
 Options:
 - `--data FOLDER` chooses where to keep the data. The `STUFFAPP_DATA` environment variable does the same.
-- `--console` uses the text menus even in Pythonista.
+- `--console` (or `--cli`) uses the text menus, even in Pythonista or on a desktop.
+- `--desktop` (or `--gui`) opens the desktop window; it stops with a message if
+  Tkinter or a graphical display is missing (on Linux install e.g. `python3-tk`).
+- Without either option the app picks Pythonista's touch interface, then the
+  desktop window, then the text menus.
 
-The desktop GUI supports browsing boxes and items, search, details, and common
-create, edit, move, delete, and import actions. Use `--console` for the full
-text-menu feature set or if Tkinter/a graphical display is unavailable.
+The desktop GUI shows Places with their boxes, and supports search, item
+details, creating and editing Places, boxes and items (with their name, type
+and fields), moving items, deleting, exporting a Place or box to PDF/Markdown,
+and importing items and Places. Use `--console` for the full text-menu feature
+set (trash, backups, item types, reminders, settings, help).
 
 Text menus use terminal colors when output goes to a terminal. Set `NO_COLOR`
 to disable them.
@@ -40,8 +48,9 @@ English guides to every feature.
 2. Download `YetAnotherStuffApp-<version>-windows.zip` from the
    [Releases](../../releases) page (or build it, see below), right-click it >
    **Extract All...** into a folder you own, e.g. `Documents\YetAnotherStuffApp`.
-3. Double-click **`Start Stuff App.bat`**. If SmartScreen asks, choose *More info* > *Run anyway*.
-4. Type the number of a menu entry and press Enter. Data goes into `StuffData` next to the app;
+3. Double-click **`Start Stuff App.bat`** for the desktop window, or
+   **`Start Stuff App (text menus).bat`** for the text menus. If SmartScreen asks, choose *More info* > *Run anyway*.
+4. In the text menus, type the number of a menu entry and press Enter. Data goes into `StuffData` next to the app;
    choose another folder (e.g. OneDrive, shared with Pythonista) in *Settings: data folder*.
 5. Optional: `py -m pip install pillow` to import PNG photos.
 
@@ -248,7 +257,7 @@ values of the type's own fields in `"extra"` (`{"Author": "..."}`).
   yourself, or restore one from the list or from any zip file. Before a restore,
   the current data is saved as a `before-restore` backup.
   Settings also has **Reset this data folder**: it first saves a backup, then
-  clears boxes, items, photos, custom types, trash and exports. Backups are kept
+  clears places, boxes, items, photos, custom types, trash and exports. Backups are kept
   so the previous data can be restored.
   For more safety, copy `backups/` to another device now and then.
 
