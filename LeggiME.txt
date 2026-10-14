@@ -39,4 +39,3 @@ GitHub Actions manuale o PR	ZIP scaricabile dagli artifact
 Tag v0.3.0	Release ufficiale GitHub con ZIP
 Un dettaglio importante: la distribuzione attuale non sembra prevedere la compilazione di un .exe autonomo. Il pacchetto contiene il programma Python e un launcher Windows .bat.
 La build che hai appena eseguito corrisponde quindi alla procedura ufficiale di creazione dello ZIP. Manca soltanto la verifica del funzionamento del pacchetto estratto, prevista dal workflow.
-	
