@@ -7,8 +7,7 @@
 * Android: run it with Pydroid 3, or ``python main.py`` in Termux.
 
 Options: ``--data FOLDER`` to choose where boxes/items are stored,
-``--console`` (or ``--cli``) to force the text menus, ``--desktop`` (or
-``--gui``) to force the desktop window.
+``--console`` to force the text menus.
 """
 
 import os

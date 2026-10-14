@@ -12,7 +12,7 @@ from .helpers import TINY_JPEG, TempStoreTestCase
 
 # Main menu: 1 Boxes, 2 Search, 3 Create Box, 4 Create Item, 5 Clone Item,
 # 6 Add Stuff to Box, 7 Import Item, 8 Import Image, 9 Export all, 10 Trash,
-# 11 Backups, 12 Item types, 13 Reminders, 14 Settings, 15 Help, 16 Places.
+# 11 Backups, 12 Item types, 13 Reminders, 14 Settings, 15 Help.
 # Box menu: 1 Show, 2 Create item, 3 Add Stuff, 4 Edit, 5 PDF, 6 MD, 7 Delete.
 # Item menu: 1 Details, 2 Edit, 3 Multi-line field, 4 Change type, 5 Clone,
 # 6 Move, 7 Import images, 8 View images, 9 Remove image, 10 PDF, 11 MD,
@@ -63,39 +63,6 @@ class DesktopLaunchTest(unittest.TestCase):
 
             self.assertEqual(run_gui.call_args[0][0].root, os.path.abspath(folder))
 
-    def test_console_flag_skips_the_desktop_gui(self):
-        with tempfile.TemporaryDirectory() as folder:
-            with patch("stuffapp.desktop.run") as run_gui, patch("stuffapp.app.App") as console_app:
-                main(["--data", folder, "--console"])
-                main(["--data", folder, "--cli"])
-
-            run_gui.assert_not_called()
-            self.assertEqual(console_app.return_value.run.call_count, 2)
-
-    def test_desktop_flag_runs_only_the_desktop_gui(self):
-        with tempfile.TemporaryDirectory() as folder:
-            with patch("stuffapp.desktop.run", return_value=True) as run_gui, \
-                    patch("stuffapp.app.App") as console_app:
-                main(["--data", folder, "--desktop"])
-                main(["--data", folder, "--gui"])
-
-            self.assertEqual(run_gui.call_count, 2)
-            console_app.assert_not_called()
-
-    def test_desktop_flag_fails_without_tkinter(self):
-        with tempfile.TemporaryDirectory() as folder:
-            with patch("stuffapp.desktop.run", return_value=False), patch("stuffapp.app.App") as console_app, \
-                    patch("sys.stderr"):
-                with self.assertRaises(SystemExit) as raised:
-                    main(["--data", folder, "--desktop"])
-
-            self.assertEqual(raised.exception.code, 1)
-            console_app.assert_not_called()
-
-    def test_console_and_desktop_flags_cannot_be_combined(self):
-        with patch("sys.stderr"), self.assertRaises(SystemExit):
-            main(["--console", "--desktop"])
-
 
 class ScriptedApp(TempStoreTestCase):
     def run_app(self, answers):
@@ -117,23 +84,10 @@ class ScriptedApp(TempStoreTestCase):
         self.assertEqual((box["label"], item["name"], item["price"]), ("Kitchen", "Pan", 20.0))
         self.assertEqual(item["box"], box["id"])
 
-    def test_create_box_in_a_place(self):
-        place = self.store.create_place("Home")
-        self.run_app(["3", "Kitchen", "", "2", "3", "Loose", "", "1", "0"])
-        boxes = dict((b["label"], b.get("place")) for b in self.store.list_boxes())
-        self.assertEqual(boxes, {"Kitchen": place["id"], "Loose": None})
-        self.assertIn("Box 'Kitchen' created in 'Home'.", self.text())
-
     def test_create_item_needs_a_box(self):
         self.run_app(["4", "0"])
         self.assertIn("Create a box first", self.text())
         self.assertEqual(self.store.list_items(), [])
-
-    def test_add_box_to_place_from_console(self):
-        place = self.store.create_place("Home")
-        box = self.store.create_box("Garage")
-        self.run_app(["16", "1", "2", "1", "0", "0"])
-        self.assertEqual(self.store.get_box(box["id"])["place"], place["id"])
 
     def test_add_stuff_to_box(self):
         a = self.store.create_box("A")

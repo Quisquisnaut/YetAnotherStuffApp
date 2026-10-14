@@ -13,17 +13,14 @@ YetAnotherStuffApp for Windows - quick setup
    data next to itself unless you choose another data folder).
 
 3. Start it
-   Double-click "Start Stuff App.bat" for the desktop window, or
-   "Start Stuff App (text menus).bat" for the text menus.
-   (Or open a terminal in the folder and type:  py main.py --desktop
-    or:  py main.py --console)
+   Double-click "Start Stuff App.bat".
+   (Or open a terminal in the folder and type:  py main.py)
    If Windows SmartScreen asks, click "More info" > "Run anyway".
    Tip: right-click the .bat > Send to > Desktop (create shortcut).
 
 4. Use it
-   Desktop window: create a Place (optional), then a box, then items.
-   Text menus: type the number of a choice and press Enter (0 = back).
-   Start with Help, or Create Box, then Create Item.
+   The app opens text menus: type the number of a choice and press Enter
+   (0 = back). Start with Help, or Create Box, then Create Item.
    - Your data is in the StuffData folder next to the app. To keep it in
      OneDrive / Dropbox (e.g. shared with Pythonista on an iPhone), use
      main menu > Settings: data folder, or start with:
