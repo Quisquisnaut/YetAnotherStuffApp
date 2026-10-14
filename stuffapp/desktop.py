@@ -137,6 +137,11 @@ class DesktopApp(object):
                 ("Backups", self.show_backups), ("Item types", self.show_types),
                 ("Settings", self.show_settings), ("Help", self.show_help)):
             tools_menu.add_command(label=label, command=lambda action=action: self._call(action))
+        search_menu = self.tk.Menu(menu, tearoff=False)
+        menu.add_cascade(label="Search", menu=search_menu)
+        for label, action in (("Filters...", self.edit_filters), ("Clear filters", self.clear_filters),
+                              ("Export results...", self.export_results)):
+            search_menu.add_command(label=label, command=lambda action=action: self._call(action))
 
     def _selected_box(self):
         selection = self.box_tree.selection()
@@ -240,8 +245,10 @@ class DesktopApp(object):
             self.item_ids.append(item["id"])
             self.item_tree.insert("", "end", iid="item_%d" % index, values=(
                 item["name"], item_type["name"], item.get("location", ""), price))
-        self.status.configure(text="%d item(s)  ·  %s  ·  total %s" % (
-            len(items), boxes.get(box_id, "All boxes"),
+        active_filters = dict(filters)
+        summary = describe_filters(self.store, active_filters)
+        self.status.configure(text="%d item(s)  ·  %s  ·  %s  ·  total %s" % (
+            len(items), boxes.get(box_id, "All boxes"), summary,
             export.format_price(self.store.total_value(items)) or "-"))
         self._set_details("")
 
@@ -768,10 +775,12 @@ class DesktopApp(object):
         elif index == 2 and self.messagebox.askyesno(
                 "Reset data", "Delete all boxes, items, photos, custom types, trash and exports? "
                 "A restorable backup will be saved first.", parent=self.root):
-            backup.reset_data(self.store)
+            safety = backup.reset_data(self.store)
             self.store = Store(self.store.root)
             self.filters = {}
             self.refresh()
+            self.messagebox.showinfo("Reset data", "Previous data is backed up at:\n%s" % safety,
+                                     parent=self.root)
 
     def _switch_data_dir(self, folder, remember):
         folder = os.path.abspath(os.path.expanduser(folder))
