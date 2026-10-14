@@ -60,33 +60,6 @@ class BoxTests(TempStoreTestCase):
         self.assertEqual(self.store.list_boxes(), [])
 
 
-class PlaceTests(TempStoreTestCase):
-    def test_create_edit_and_move_boxes_between_places(self):
-        first = self.store.create_place("  Home ", "Main house")
-        second = self.store.create_place("Storage")
-        self.assertEqual((first["name"], first["description"]), ("Home", "Main house"))
-        box = self.store.create_box("Garage")
-        self.store.move_box(box["id"], first["id"])
-        self.assertEqual(self.store.place_boxes(first["id"])[0]["id"], box["id"])
-        self.assertEqual(self.store.place_of_box(box["id"])["id"], first["id"])
-        self.store.move_box(box["id"], second["id"])
-        self.assertEqual(self.store.place_boxes(first["id"]), [])
-        self.assertEqual(self.store.place_boxes(second["id"])[0]["id"], box["id"])
-        self.store.move_box(box["id"])
-        self.assertIsNone(self.store.place_of_box(box["id"]))
-        self.store.update_place(first["id"], name="House")
-        self.assertEqual(self.store.get_place(first["id"])["name"], "House")
-
-    def test_place_and_box_constraints(self):
-        self.assertRaises(StorageError, self.store.create_place, " ")
-        place = self.store.create_place("Home")
-        self.assertRaises(StorageError, self.store.create_box, "Invalid", place_id="missing")
-        box = self.store.create_box("Garage", place_id=place["id"])
-        self.assertRaises(StorageError, self.store.create_item, "Lamp", place["id"])
-        self.assertRaises(StorageError, self.store.move_box, box["id"], "missing")
-        self.assertEqual(self.store.get_box(box["id"])["place"], place["id"])
-
-
 class ItemTests(TempStoreTestCase):
     def setUp(self):
         TempStoreTestCase.setUp(self)

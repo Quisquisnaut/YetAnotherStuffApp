@@ -70,24 +70,12 @@ class ConsoleUI(object):
     """Text menus driven by ``input()``. Works on Windows, Linux, macOS,
     Android (Termux, Pydroid 3) and in the Pythonista console."""
 
-    def __init__(self, input_func=input, print_func=safe_print, docs_dir=None, opener="auto", color=None):
+    def __init__(self, input_func=input, print_func=safe_print, docs_dir=None, opener="auto"):
         self.input = input_func
         self.print = print_func
         self.docs_dir = docs_dir or os.getcwd()
         self.opener = system_opener() if opener == "auto" else opener
         self.skip = ()  # folders hidden from file pickers (the app's image store)
-        if color is None:
-            try:
-                color = sys.stdout.isatty()
-            except (AttributeError, OSError):
-                color = False
-        self.color = bool(color) and "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
-
-    def _style(self, text, code):
-        return "\033[%sm%s\033[0m" % (code, text) if self.color else text
-
-    def _heading(self, title):
-        self.print(self._style("== %s ==" % title, "1;36"))
 
     def _ask(self, prompt):
         try:
@@ -98,7 +86,7 @@ class ConsoleUI(object):
     def message(self, text, title=None):
         self.print("")
         if title:
-            self._heading(title)
+            self.print("== %s ==" % title)
         self.print(text)
 
     def choose(self, title, options):
@@ -106,17 +94,17 @@ class ConsoleUI(object):
         if not options:
             return None
         self.print("")
-        self._heading(title)
+        self.print("== %s ==" % title)
         for number, option in enumerate(options, start=1):
-            self.print("  %s. %s" % (self._style("%2d" % number, "36"), option))
-        self.print("   %s. Back" % self._style("0", "2"))
+            self.print("  %2d. %s" % (number, option))
+        self.print("   0. Back")
         while True:
-            answer = self._ask(self._style("> ", "1;36")).strip()
+            answer = self._ask("> ").strip()
             if answer in ("", "0", "q", "b"):
                 return None
             if answer.isdigit() and 1 <= int(answer) <= len(options):
                 return int(answer) - 1
-            self.print(self._style("Please enter a number between 0 and %d." % len(options), "33"))
+            self.print("Please enter a number between 0 and %d." % len(options))
 
     def choose_grouped(self, title, groups):
         """Like ``choose`` with headings: ``groups`` is ``[(heading,
@@ -126,22 +114,22 @@ class ConsoleUI(object):
         if not options:
             return None
         self.print("")
-        self._heading(title)
+        self.print("== %s ==" % title)
         number = 0
         for heading, group in groups:
             if heading and group:
-                self.print(self._style("  -- %s --" % heading, "1;35"))
+                self.print("  -- %s --" % heading)
             for option in group:
                 number += 1
-                self.print("  %s. %s" % (self._style("%2d" % number, "36"), option))
-        self.print("   %s. Back" % self._style("0", "2"))
+                self.print("  %2d. %s" % (number, option))
+        self.print("   0. Back")
         while True:
-            answer = self._ask(self._style("> ", "1;36")).strip()
+            answer = self._ask("> ").strip()
             if answer in ("", "0", "q", "b"):
                 return None
             if answer.isdigit() and 1 <= int(answer) <= len(options):
                 return int(answer) - 1
-            self.print(self._style("Please enter a number between 0 and %d." % len(options), "33"))
+            self.print("Please enter a number between 0 and %d." % len(options))
 
     def form(self, title, fields):
         """``fields`` is a list of ``(key, label, default)``. Returns a dict.
@@ -149,7 +137,7 @@ class ConsoleUI(object):
         Pressing enter keeps the default; a single ``-`` clears the value.
         """
         self.print("")
-        self.print(self._style("== %s ==" % title, "1;36") + " (enter = keep, '-' = clear)")
+        self.print("== %s == (enter = keep, '-' = clear)" % title)
         result = {}
         for key, label, default in fields:
             shown = (" [%s]" % default) if default else ""
@@ -165,7 +153,7 @@ class ConsoleUI(object):
     def text(self, title, default=""):
         """Multi-line input. Finish with a line containing only '.'."""
         self.print("")
-        self._heading(title)
+        self.print("== %s ==" % title)
         if default:
             self.print("Current text:")
             self.print(default)
@@ -182,7 +170,7 @@ class ConsoleUI(object):
         return "\n".join(lines)
 
     def confirm(self, text):
-        answer = self._ask(self._style("%s [y/N] " % text, "1;36")).strip().lower()
+        answer = self._ask("%s [y/N] " % text).strip().lower()
         return answer in ("y", "yes", "s", "si")
 
     def _pick_path(self, what, exts):
