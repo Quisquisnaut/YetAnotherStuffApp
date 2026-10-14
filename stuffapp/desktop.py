@@ -6,7 +6,7 @@ from pathlib import Path
 
 from . import backup, config, export, guide
 from .app import KIND_CHOICES, KIND_NAMES, TRASH_DAYS, describe_filters, reminder_line, startup
-from .importer import import_item_file, suggested_box, suggested_type
+from .importer import import_box_file, import_item_file, suggested_box, suggested_type
 from .images import to_jpeg_bytes
 from .storage import EXTRA_PREFIX, SORT_KEYS, Store, StorageError, field_options
 
@@ -111,6 +111,7 @@ class DesktopApp(object):
         file_menu = self.tk.Menu(menu, tearoff=False)
         menu.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="Import item...", command=lambda: self._call(self.import_item))
+        file_menu.add_command(label="Import box...", command=lambda: self._call(self.import_box))
         file_menu.add_command(label="Import images...", command=lambda: self._call(self.import_image))
         file_menu.add_command(label="Export all...", command=lambda: self._call(self.export_all))
         file_menu.add_separator()
@@ -680,6 +681,19 @@ class DesktopApp(object):
         self.refresh()
         self.messagebox.showinfo("Import item", "'%s' imported.%s" % (
             imported["name"], "\n" + "\n".join(warnings) if warnings else ""), parent=self.root)
+
+    def import_box(self):
+        path = self.filedialog.askopenfilename(
+            parent=self.root, title="Import box",
+            filetypes=(("Box Markdown exports", "*.md *.markdown"), ("All files", "*.*")))
+        if not path:
+            return
+        box, items, warnings = import_box_file(self.store, path)
+        self.refresh()
+        message = "Box '%s' imported with %d item(s)." % (box["label"], len(items))
+        if warnings:
+            message += "\n" + "\n".join(warnings)
+        self.messagebox.showinfo("Import box", message, parent=self.root)
 
     def show_reminders(self):
         due = self.store.due_reminders()

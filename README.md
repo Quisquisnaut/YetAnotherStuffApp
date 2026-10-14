@@ -215,6 +215,13 @@ so a re-imported item always gets a new ID.
 
 Prices accept `12.50`, `12,50`, `1.299,00 €` and `1,299.00`. The year is a 4-digit year.
 
+## Importing a box
+
+Use **Import Box** to import a box Markdown export. The app creates a new box
+with the exported label and description, then imports its items with new IDs.
+Keep the export's accompanying `_images` folder next to the Markdown file to
+import its pictures. PDF exports cannot be imported.
+
 ## Data and data safety
 
 Everything is stored as plain files in `StuffData/` next to the app, or in the

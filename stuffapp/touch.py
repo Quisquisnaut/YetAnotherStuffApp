@@ -26,7 +26,7 @@ from . import __version__, backup, config, export, guide
 from .app import (KIND_CHOICES, KIND_NAMES, TRASH_DAYS, describe_filters, due_text, hidden_dirs, options_text,
                   reminder_line, startup)
 from .images import pil_to_jpeg_bytes, to_jpeg_bytes
-from .importer import import_item_file, suggested_box, suggested_type
+from .importer import import_box_file, import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
 from .storage import (EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_LABELS, REMINDER_DAYS, SORT_KEYS, Store, StorageError,
                       field_options, is_safe_link)
@@ -346,6 +346,7 @@ class HomeScreen(TableScreen):
                 {"title": "Create Box", "on_tap": self.app.on_create_box, "accessory": "none", "color": ACCENT},
                 {"title": "Create Item", "on_tap": self.app.on_create_item, "accessory": "none", "color": ACCENT},
                 {"title": "Import Item", "on_tap": self.app.on_import_item, "accessory": "none", "color": ACCENT},
+                {"title": "Import Box", "on_tap": self.app.on_import_box, "accessory": "none", "color": ACCENT},
                 {"title": "Import Image", "on_tap": self.app.on_import_image, "accessory": "none", "color": ACCENT},
                 {"title": "Clone Item", "on_tap": self.app.on_clone_pick, "accessory": "none", "color": ACCENT},
                 {"title": "Add Stuff to Box", "on_tap": self.app.on_add_stuff, "accessory": "none", "color": ACCENT},
@@ -1574,6 +1575,31 @@ class TouchApp(object):
         self.open_item(item["id"])
         if warnings:
             info("Imported with warnings", "\n".join(warnings))
+
+    @task
+    def on_import_box(self):
+        self._import_box()
+
+    def _import_box(self):
+        index = choose("Import a box Markdown export from", ["Files app", "Pythonista folder"])
+        path = None
+        if index == 0:
+            path = dialogs.pick_document(types=["public.text", "public.plain-text",
+                                                "net.daringfireball.markdown"])
+        elif index == 1:
+            base = os.path.dirname(self.store.root)
+            files = find_files(base, (".md", ".markdown"), skip=self._hidden())
+            picked = choose("Choose the box export", files)
+            if picked is not None:
+                path = os.path.join(base, files[picked])
+        if not path:
+            return
+        box, items, warnings = import_box_file(self.store, path)
+        self.refresh_all()
+        message = "Box '%s' imported with %d item(s)." % (box["label"], len(items))
+        if warnings:
+            message += "\n" + "\n".join(warnings)
+        info("Import Box", message)
 
     @task
     def on_import_image(self):

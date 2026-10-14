@@ -7,7 +7,7 @@ same storage, import, export and backup modules.
 import os
 
 from . import backup, config, export, guide
-from .importer import import_item_file, suggested_box, suggested_type
+from .importer import import_box_file, import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
 from .storage import (EXTRA_KINDS, EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_KIND_NAMES, FIELD_LABELS, REMINDER_DAYS,
                       SORT_KEYS, StorageError, field_options)
@@ -153,6 +153,7 @@ class App(object):
             ("Reminders", self.reminders_menu),
             ("Settings: data folder", self.settings),
             ("Help", self.help_menu),
+            ("Import Box", self.import_box),
         ]
         while True:
             count = len(self.store.due_reminders())
@@ -664,6 +665,17 @@ class App(object):
             text += "\n" + "\n".join(warnings)
         self.ui.message(text)
         return item
+
+    def import_box(self):
+        path = self.ui.pick_text_file("box export")
+        if not path:
+            return None
+        box, items, warnings = import_box_file(self.store, path)
+        text = "Box '%s' imported with %d item(s)." % (box["label"], len(items))
+        if warnings:
+            text += "\n" + "\n".join(warnings)
+        self.ui.message(text)
+        return box
 
     def import_image(self):
         item = self.pick_item("Add images to which item?")

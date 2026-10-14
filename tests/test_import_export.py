@@ -3,7 +3,7 @@ import re
 import unittest
 
 from stuffapp import export
-from stuffapp.importer import import_item_file, parse_item_text, suggested_box
+from stuffapp.importer import import_box_file, import_item_file, parse_box_file, parse_item_text, suggested_box
 from stuffapp.pdf import PDFDocument, jpeg_info, wrap_text
 from stuffapp.storage import StorageError
 
@@ -83,6 +83,49 @@ class ImportTests(TempStoreTestCase):
             import_item_file(self.store, path, box_id=box["id"])
 
         self.assertEqual([existing["id"] for existing in self.store.box_items(box["id"])], [item["id"]])
+
+    def test_box_markdown_export_round_trip(self):
+        box = self.store.create_box("Tools", "Tools kept in the garage.")
+        item = self.store.create_item(
+            "Drill", box["id"], description="18V\nTwo batteries", location="Garage",
+            links=["https://example.com/drill"], price=1299.5, origin="Shop", notes="Bits in case")
+        book = self.store.create_item("Dune", box["id"], "book", extra={"Author": "Frank Herbert"})
+        self.store.add_image_bytes(item["id"], TINY_JPEG)
+        path = export.export_box_markdown(self.store, box["id"])
+
+        label, description, fields = parse_box_file(path, self.store.all_extra_kinds())
+        self.assertEqual((label, description, [field["name"] for field in fields]),
+                         ("Tools", "Tools kept in the garage.", ["Drill", "Dune"]))
+        imported_box, imported_items, warnings = import_box_file(self.store, path)
+        imported = next(item for item in imported_items if item["name"] == "Drill")
+        imported_book = next(item for item in imported_items if item["name"] == "Dune")
+        self.assertEqual(warnings, [])
+        self.assertNotEqual(imported_box["id"], box["id"])
+        self.assertNotEqual(imported["id"], item["id"])
+        self.assertEqual(imported_box["description"], box["description"])
+        self.assertEqual(imported["box"], imported_box["id"])
+        for key in ("name", "description", "location", "links", "price", "origin", "notes"):
+            self.assertEqual(imported[key], item[key], key)
+        self.assertEqual(len(imported["images"]), 1)
+        self.assertEqual((imported_book["type"], imported_book["extra"]), (book["type"], book["extra"]))
+
+    def test_empty_box_markdown_export_round_trip(self):
+        box = self.store.create_box("Empty")
+        path = export.export_box_markdown(self.store, box["id"])
+
+        imported_box, items, warnings = import_box_file(self.store, path)
+
+        self.assertEqual(imported_box["label"], "Empty")
+        self.assertEqual(items, [])
+        self.assertEqual(warnings, [])
+
+    def test_invalid_box_export_is_rejected_without_creating_box(self):
+        path = self.write_file("not-a-box.md", "# Inventory\n\n1 item(s)\n")
+
+        with self.assertRaisesRegex(StorageError, "not a box export"):
+            import_box_file(self.store, path)
+
+        self.assertEqual(self.store.list_boxes(), [])
 
 
 class ExportTests(TempStoreTestCase):

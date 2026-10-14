@@ -201,8 +201,8 @@ class ConsoleUI(object):
         path = self._ask("%s: " % prompt).strip().strip("'\"")
         return os.path.expanduser(path) if path else None
 
-    def pick_text_file(self):
-        return self._pick_path("the item file", TEXT_FILE_EXTS)
+    def pick_text_file(self, what="item file"):
+        return self._pick_path("the %s" % what, TEXT_FILE_EXTS)
 
     def pick_images(self):
         """Return a list of JPEG bytes to attach."""

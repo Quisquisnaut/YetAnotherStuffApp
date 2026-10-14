@@ -115,7 +115,7 @@ IGNORED_KEYS = {"id", "created", "modified"}
 
 # "Key: value", "- **Key:** value", "**Key**: value" ...
 _FIELD_RE = re.compile(r"^\s*(?:[-*+]\s+)?\**\s*([^\W\d_][\w ()\u20ac/.'-]*?)\s*(?::\**|\**\s*:)\s*(.*)$")
-_HEADING_RE = re.compile(r"^\s*#\s+(.+?)\s*$")
+_HEADING_RE = re.compile(r"^\s*#+\s+(.+?)\s*$")
 _MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)\)")
 _BOX_EXPORT_RE = re.compile(r"^# Box: .+\r?\n\r?\nID: [0-9a-f]{12}(?:\r?\n|$)", re.I)
 
@@ -207,6 +207,9 @@ def parse_item_text(text, extra_kinds=None):
 
 
 MAX_ITEM_FILE_BYTES = 1024 * 1024
+_BOX_HEADER_RE = re.compile(
+    r"^# Box: (.+?)\r?\n\r?\nID: ([0-9a-f]{12})(?:\r?\n|$)", re.I)
+_BOX_COUNT_RE = re.compile(r"^\d+ item\(s\)(?:, total paid .*)?$", re.M)
 
 
 def parse_item_file(path, extra_kinds=None):
@@ -228,6 +231,35 @@ def parse_item_file(path, extra_kinds=None):
     if _BOX_EXPORT_RE.match(text):
         raise StorageError("This is a box export, not an item file. Import an item export instead.")
     return parse_item_text(text, extra_kinds)
+
+
+def parse_box_file(path, extra_kinds=None):
+    """Parse a Markdown box export into ``(label, description, items)``."""
+    if os.path.getsize(path) > MAX_ITEM_FILE_BYTES:
+        raise StorageError("The file is too large for a box (max 1 MB).")
+    try:
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            text = fh.read()
+    except UnicodeDecodeError:
+        raise StorageError("The file is not UTF-8 text.")
+    header = _BOX_HEADER_RE.match(text)
+    if not header:
+        raise StorageError("This is not a box export.")
+    label = header.group(1).strip()
+    remaining = text[header.end():]
+    count = _BOX_COUNT_RE.search(remaining)
+    if not count:
+        raise StorageError("The box export has no item count.")
+    description = remaining[:count.start()].strip()
+    body = remaining[count.end():]
+    starts = list(re.finditer(r"(?m)^## .+$", body))
+    items = []
+    for index, start in enumerate(starts):
+        end = starts[index + 1].start() if index + 1 < len(starts) else len(body)
+        item_text = body[start.start():end].rstrip()
+        item_text = re.sub(r"(?:\r?\n)?---$", "", item_text)
+        items.append(parse_item_text(item_text, extra_kinds))
+    return label, description, items
 
 
 def suggested_box(store, path):
@@ -293,21 +325,8 @@ def _fit_to_type(store, fields, item_type, warnings):
     return data
 
 
-def import_item_file(store, path, box_id=None, type_id=None):
-    """Create an item from the file at ``path`` inside box ``box_id``.
-
-    Every item must be in a box: without ``box_id`` the box named in the
-    file's ``Box:`` line is used, if it exists. The type is ``type_id``,
-    else the one named in the ``Type:`` line, else Generic.
-    Returns ``(item, warnings)``; warnings list images that could not be
-    imported and values that do not fit the type.
-    """
-    fields = parse_item_file(path, store.all_extra_kinds())
-    if not box_id:
-        box = suggested_box(store, path)
-        if box is None:
-            raise StorageError("Choose a box for '%s': every item must be in a box." % fields["name"])
-        box_id = box["id"]
+def _import_item_fields(store, fields, path, box_id, type_id=None):
+    """Create an item from parsed fields and import its relative images."""
     warnings = []
     if type_id:
         item_type = store.get_type(type_id)
@@ -333,9 +352,6 @@ def import_item_file(store, path, box_id=None, type_id=None):
         parts = image.replace("\\", "/").split("/")
         if (":" in image or image.startswith(("/", "\\")) or os.path.isabs(image)
                 or any(part in ("", ".", "..") for part in parts)):
-            # Checked before touching the file system: no absolute, drive,
-            # UNC (\\server\share, which leaks credentials on Windows) or
-            # parent-folder paths.
             warnings.append("Skipped %s: images must be in the folder of the item file" % image)
             continue
         image_path = os.path.realpath(os.path.join(base_dir, *parts))
@@ -350,3 +366,34 @@ def import_item_file(store, path, box_id=None, type_id=None):
         except StorageError as exc:
             warnings.append("%s: %s" % (image, exc))
     return store.get_item(item["id"]), warnings
+
+
+def import_item_file(store, path, box_id=None, type_id=None):
+    """Create an item from the file at ``path`` inside box ``box_id``.
+
+    Every item must be in a box: without ``box_id`` the box named in the
+    file's ``Box:`` line is used, if it exists. The type is ``type_id``,
+    else the one named in the ``Type:`` line, else Generic.
+    Returns ``(item, warnings)``; warnings list images that could not be
+    imported and values that do not fit the type.
+    """
+    fields = parse_item_file(path, store.all_extra_kinds())
+    if not box_id:
+        box = suggested_box(store, path)
+        if box is None:
+            raise StorageError("Choose a box for '%s': every item must be in a box." % fields["name"])
+        box_id = box["id"]
+    return _import_item_fields(store, fields, path, box_id, type_id)
+
+
+def import_box_file(store, path):
+    """Import a Markdown box export as a new box and return its items/warnings."""
+    label, description, fields_list = parse_box_file(path, store.all_extra_kinds())
+    box = store.create_box(label, description)
+    imported = []
+    warnings = []
+    for fields in fields_list:
+        item, item_warnings = _import_item_fields(store, fields, path, box["id"])
+        imported.append(item)
+        warnings.extend("%s: %s" % (item["name"], warning) for warning in item_warnings)
+    return box, imported, warnings
