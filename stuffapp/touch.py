@@ -6,7 +6,7 @@ modules, so importing this module fails (ImportError) everywhere else and
 
 Threading: table taps and button actions run on the main thread. Anything
 that shows a blocking dialog runs on Pythonista's background thread through
-the ``task`` decorator; view updates go through ``ui.on_main_thread``.
+the ``task`` decorator; view updates go through ``objc_util.on_main_thread``.
 """
 
 import functools
@@ -177,7 +177,7 @@ class ChoiceButton(ui.View):
     def show(self):
         self.button.subviews[0].text = (self.value or "\u2013") + "  \u203a"
 
-    @ui.on_main_thread
+    @objc_util.on_main_thread
     def show_on_main(self):
         self.show()
 
@@ -660,7 +660,7 @@ class ItemEditor(Screen):
             self.type_id = item_type["id"]
             self._rebuild_on_main()
 
-    @ui.on_main_thread
+    @objc_util.on_main_thread
     def _rebuild_on_main(self):
         self._build_fields()
 
@@ -1267,22 +1267,32 @@ class SettingsScreen(TableScreen):
         root = self.app.store.root
         local = config.local_data_dir()
         icloud = config.icloud_data_dir()
-        rows = [{"title": "On this device", "subtitle": "Pythonista > This iPhone",
+        in_icloud = config.is_icloud_drive_path(root)
+        project_in_icloud = config.is_icloud_drive_path(local)
+        rows = [{"title": "iCloud Drive (project folder)" if project_in_icloud else "On this device",
+                 "subtitle": "Project directory in iCloud Drive" if project_in_icloud else "Pythonista > This iPhone",
                  "accessory": "checkmark" if root == os.path.abspath(local) else "none",
                  "on_tap": functools.partial(self.on_location, local, False)}]
         if icloud:
-            rows.append({"title": "iCloud Drive", "subtitle": "Pythonista > iCloud; syncs between devices",
+            rows.append({"title": "iCloud Drive (Pythonista folder)",
+                         "subtitle": "Pythonista > iCloud; syncs between devices",
                          "accessory": "checkmark" if root == os.path.abspath(icloud) else "none",
                          "on_tap": functools.partial(self.on_location, icloud, True)})
-        else:
-            rows.append({"title": "iCloud Drive is not available", "color": MUTED,
-                         "subtitle": "Turn on iCloud for Pythonista in the iOS settings"})
+        elif not in_icloud:
+            rows.append({"title": "Pythonista iCloud folder not detected", "color": MUTED,
+                         "subtitle": "The dedicated Pythonista folder is not accessible here; iCloud Drive may still be on"})
+        if in_icloud and root != os.path.abspath(local) and (
+                not icloud or root != os.path.abspath(icloud)):
+            rows.insert(0, {"title": "iCloud Drive (current folder)",
+                            "subtitle": "Using a folder selected in Files",
+                            "accessory": "checkmark"})
         self.show([
             ("Data location", rows),
             ("Data", [{"title": "Reset this data folder",
                        "subtitle": "A recovery backup is saved first; existing backups are kept",
                        "color": DANGER, "accessory": "none", "on_tap": self.on_reset_data}]),
-            ("Current folder", [{"title": root, "lines": 0, "color": MUTED}]),
+            ("Current folder", [{"title": root, "lines": 0, "color": MUTED,
+                                 "subtitle": "Located in iCloud Drive (Files)" if in_icloud else ""}]),
             ("About", [{"title": "YetAnotherStuffApp %s" % __version__, "color": MUTED}]),
         ])
 
@@ -1334,15 +1344,15 @@ class TouchApp(object):
         self.refresh_all()
 
     # ------------------------------------------------------- navigation
-    @ui.on_main_thread
+    @objc_util.on_main_thread
     def push(self, screen):
         self.nav.push_view(screen)
 
-    @ui.on_main_thread
+    @objc_util.on_main_thread
     def pop(self):
         self.nav.pop_view()
 
-    @ui.on_main_thread
+    @objc_util.on_main_thread
     def refresh_all(self):
         for screen in list(self.screens):
             try:

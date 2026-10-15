@@ -1,0 +1,18 @@
+YetAnotherStuffApp - portable source/console test package (Step 00)
+
+Extract the complete ZIP and keep main.py next to stuffapp.
+Requires Python 3. No third-party dependencies are required.
+
+Console: python3 main.py --console
+Desktop: python3 main.py (Tkinter GUI if available, otherwise text menus)
+Version: python3 main.py --version
+Test data: python3 main.py --console --data /path/to/empty/test-inventory
+
+On Windows use py -3 instead of python3. On Android use the Python command
+provided by your interpreter (e.g. python in Termux).
+For iPhone/iPad use the Pythonista package and its dedicated instructions.
+
+By default StuffData is next to main.py. --data overrides STUFFAPP_DATA,
+which overrides the location saved in Settings. Keep independent backups
+before changing a data location or updating. This package contains no data.
+BUILD-INFO.json records the version, Step 00, base commit and file hashes.

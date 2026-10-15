@@ -17,22 +17,26 @@ It uses only the Python 3 standard library, so there is nothing to install. It r
 
 Options:
 - `--data FOLDER` chooses where to keep the data. The `STUFFAPP_DATA` environment variable does the same.
-- `--console` uses the text menus even in Pythonista.
+- `--console` forces text menus on every platform, including Windows and Pythonista.
+- `--version` prints the app version without opening or creating an inventory.
 
 The desktop GUI and text menus provide the same inventory features, including
 filters, exports, reminders, item types, trash, backups, and settings. Use
 `--console` to choose the text menus or if Tkinter/a graphical display is
 unavailable.
 
-Text menus use terminal colors when output goes to a terminal. Set `NO_COLOR`
-to disable them.
+Text menus use colors when supported by the terminal. On Windows the app
+enables virtual terminal processing, falling back to plain text if unavailable.
+Set `NO_COLOR` to disable colors explicitly.
 
 Optional: if Pillow (`PIL`) is installed (Pythonista already includes it), the app
 converts PNG/HEIC photos to JPEG and turns them the right way up.
 Without Pillow, you can only import JPEG files.
 
-The app has built-in **Help** (in the main menu / home screen) with short
-English guides to every feature.
+The app has built-in **Help** with shared English guides. Desktop: **Help >
+User guide / About**; Pythonista: Home > Help > About;
+console: main menu > Help > About. The desktop title, console main menu,
+and Pythonista Settings > About show the version from `stuffapp/__init__.py`.
 
 ## Windows quick setup
 
@@ -42,17 +46,56 @@ English guides to every feature.
    [Releases](../../releases) page (or build it, see below), right-click it >
    **Extract All...** into a folder you own, e.g. `Documents\YetAnotherStuffApp`.
 3. Double-click **`Start Stuff App.bat`**. If SmartScreen asks, choose *More info* > *Run anyway*.
-4. Type the number of a menu entry and press Enter. Data goes into `StuffData` next to the app;
-   choose another folder (e.g. OneDrive, shared with Pythonista) in *Settings: data folder*.
+4. The Tkinter window opens: choose **New box**, then **New item**. Close it
+   with **File > Exit** or the window close button. For text menus run
+   `"Start Stuff App.bat" --console` in a terminal (0 exits the main menu).
+   Data goes into `StuffData` next to the app; use **Tools > Settings** to choose
+   another folder. If Tkinter or a display is unavailable, text menus open instead.
 5. Optional: `py -m pip install pillow` to import PNG photos.
 
-The zip contains the same `WINDOWS-SETUP.txt` instructions. To update, unzip the new
-version over the old one: your `StuffData` folder and settings are kept.
+The ZIP contains `WINDOWS-SETUP.txt` and requires Python; it is **not a standalone
+`.exe`**. Before updating, close the app and independently copy the entire data
+folder and `stuffapp_settings.json`. Replace app code, keeping data and settings
+in place. Test an unapproved build in a separate folder with `--data` pointing
+to an empty test inventory. Do not merge different inventories by overwriting files.
 
-Build the zip yourself (any OS): `python tools/make_release.py` writes
-`dist/YetAnotherStuffApp-<version>-windows.zip`. The *Windows release* GitHub
-workflow tests the app on Windows for every pull request and publishes the zip
-as a release when a `v*` tag is pushed (e.g. `git tag v0.3.0 && git push --tags`).
+Build locally (any desktop OS):
+
+```text
+python tools/make_release.py --platform all
+python tools/smoke_release.py dist/*.zip --report dist/console-smoke.json
+```
+
+`--platform windows` is the default. Every ZIP contains `main.py`, `stuffapp/`,
+README, platform instructions and `BUILD-INFO.json` with version, Step 00, base
+commit and an exact SHA-256 inventory of the packaged working tree. Tests, user
+data, backups, settings, caches and temporary files are excluded.
+
+| Test package in `dist/` | Purpose |
+|---|---|
+| `YetAnotherStuffApp-<version>-windows.zip` | Python required; batch launcher, desktop GUI or `--console` |
+| `YetAnotherStuffApp-<version>-pythonista.zip` | Import the whole extracted project in Pythonista; see `PYTHONISTA-SETUP.txt` |
+| `YetAnotherStuffApp-<version>-source.zip` | Portable app source/console; see `SOURCE-SETUP.txt` |
+
+On Windows, run the launcher and GUI checks separately:
+
+```text
+python tools/smoke_release.py dist/*-windows.zip --launcher --report dist/launcher-smoke.json
+python tools/smoke_release.py dist/*-windows.zip --gui --report dist/gui-smoke.json
+```
+
+The GUI probe checks real Tkinter widgets and About in a hidden window, then
+maps temporary windows off screen to verify keyboard focus, Return and Cancel.
+It closes everything automatically and does not replace visual acceptance.
+Each child process has a 30-second timeout.
+Only run this tool on your own trusted packages. Pythonista touch rendering still
+needs testing on an iPhone/iPad.
+
+The *Windows release* workflow runs tests and console package checks on Windows,
+Linux and macOS, plus separate Windows launcher/GUI checks. Test artifacts and
+JSON smoke evidence are retained for 14 days. Local builds default to
+`--kind test`. Only an explicitly pushed `v<version>` tag enables publication;
+the tag must match the central version. A local test build does not publish anything.
 
 ## Rules
 
@@ -243,12 +286,24 @@ values of the type's own fields in `"extra"` (`{"Author": "..."}`).
   the current data is saved as a `before-restore` backup.
   Settings also has **Reset this data folder**: it first saves a backup, then
   clears boxes, items, photos, custom types, trash and exports. Backups are kept
-  so the previous data can be restored.
+  so the inventory can be restored. **Current backups exclude trash and exports**;
+  before resetting, copy the complete data folder with the app closed if you
+  need those files. Further copy/reset safeguards belong to the next plan step.
   For more safety, copy `backups/` to another device now and then.
 
 Settings (only the data folder location) are stored in `stuffapp_settings.json`
 next to `main.py`, separately on each device.
 Don't edit the same data on two devices at the same moment: the last save wins.
+In Pythonista, projects opened from Files under iCloud Drive are recognized as
+**iCloud Drive (project folder)**, preserving `StuffData` next to that project.
+The dedicated Pythonista iCloud container is a different location. Recognizing
+an iCloud path does not move data or verify that Windows sees the same inventory;
+automatic bidirectional synchronization with conflict resolution is not provided.
+
+Data location precedence: `--data`, then `STUFFAPP_DATA`, then Settings, then
+`StuffData` next to `main.py`. Before accepting a data copy, back up both locations
+and use a genuinely empty destination. Existing copy safeguards are limited;
+do not copy over a partly populated inventory.
 
 ## Tests
 

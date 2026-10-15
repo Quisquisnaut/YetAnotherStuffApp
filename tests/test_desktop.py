@@ -1,9 +1,20 @@
 from stuffapp.desktop import DesktopApp
 from stuffapp.itemtypes import GENERIC
 from tests.helpers import TempStoreTestCase
+from stuffapp import __version__
 
 
 class DesktopFeatureTests(TempStoreTestCase):
+    def test_about_displays_current_version(self):
+        app = DesktopApp.__new__(DesktopApp)
+        app.root = None
+        output = []
+        app.messagebox = type("MessageBox", (), {
+            "showinfo": lambda *_args, **_kwargs: output.append(_args[2]),
+        })()
+        app.show_about()
+        self.assertIn("YetAnotherStuffApp %s" % __version__, output[0])
+
     def test_new_item_dialog_fields_include_name(self):
         app = DesktopApp.__new__(DesktopApp)
         app.store = self.store

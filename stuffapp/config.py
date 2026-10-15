@@ -49,6 +49,24 @@ def icloud_data_dir():
     return None
 
 
+def is_icloud_drive_path(path):
+    """Recognize iCloud Drive locations, including projects opened from Files.
+
+    The dedicated Pythonista iCloud container is only one possible location:
+    iOS Files may provide a project under com~apple~CloudDocs instead.
+    This is an informational check; it does not move or modify data.
+    """
+    try:
+        parts = os.path.realpath(os.path.expanduser(os.fspath(path))).split(os.sep)
+    except (TypeError, ValueError, OSError):
+        return False
+    for parent, container in zip(parts, parts[1:]):
+        if parent == "Mobile Documents" and (
+                container == "com~apple~CloudDocs" or container.startswith("iCloud~")):
+            return True
+    return False
+
+
 def has_data(folder):
     for sub in ("boxes", "items"):
         path = os.path.join(folder, sub)

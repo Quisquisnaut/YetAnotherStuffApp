@@ -158,7 +158,7 @@ class App(object):
             count = len(self.store.due_reminders())
             labels = [a[0] if a[1] != self.reminders_menu or not count else "Reminders (%d due)" % count
                       for a in actions]
-            index = self.ui.choose("Stuff - main menu", labels)
+            index = self.ui.choose(guide.APP_TITLE + " - main menu", labels)
             if index is None:
                 return
             self._safe(actions[index][1])
@@ -884,10 +884,11 @@ def main(argv=None):
     from .storage import Store, default_data_dir
 
     parser = argparse.ArgumentParser(description="Keep your stuff sorted in boxes.")
+    parser.add_argument("--version", action="version", version=guide.APP_TITLE)
     parser.add_argument("--data", help="data folder (default: as chosen in Settings, or StuffData "
                                        "next to the app; also STUFFAPP_DATA)")
     parser.add_argument("--console", action="store_true",
-                        help="use text menus even inside Pythonista")
+                        help="force text menus on every platform (no desktop or touch GUI)")
     args = parser.parse_args(argv)
 
     store = Store(args.data or default_data_dir())

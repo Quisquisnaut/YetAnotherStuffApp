@@ -1,4 +1,6 @@
 import os
+import io
+from contextlib import redirect_stdout
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -22,6 +24,17 @@ ITEM_FORM = ["Pan", "", "Cupboard", "", "20", "IKEA", ""]
 
 
 class ConsoleUIStyleTest(unittest.TestCase):
+    def setUp(self):
+        environment = patch.dict(os.environ, {"TERM": "xterm"})
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop("NO_COLOR", None)
+
+    def test_dumb_terminal_disables_styles_even_when_requested(self):
+        with patch.dict(os.environ, {"TERM": "dumb"}):
+            ui = ConsoleUI(color=True)
+        self.assertFalse(ui.color)
+
     def test_terminal_styles_can_be_enabled(self):
         output = []
         prompts = []
@@ -56,6 +69,35 @@ class ConsoleUIStyleTest(unittest.TestCase):
 
 
 class DesktopLaunchTest(unittest.TestCase):
+    def test_version_exits_before_creating_data(self):
+        from stuffapp import __version__
+
+        with tempfile.TemporaryDirectory() as folder:
+            target = os.path.join(folder, "not-created")
+            output = io.StringIO()
+            with redirect_stdout(output), self.assertRaises(SystemExit) as caught:
+                main(["--data", target, "--version"])
+            self.assertEqual(caught.exception.code, 0)
+            self.assertIn("YetAnotherStuffApp %s" % __version__, output.getvalue())
+            self.assertFalse(os.path.exists(target))
+
+    def test_console_flag_bypasses_desktop(self):
+        self._console_launch(["--console"], desktop_available=True)
+
+    def test_unavailable_desktop_falls_back_to_console(self):
+        self._console_launch([], desktop_available=False)
+
+    def _console_launch(self, arguments, desktop_available):
+        output = []
+        ui = ConsoleUI(input_func=lambda _prompt: "0", print_func=lambda *a: output.append(str(a)),
+                       opener=None, color=False)
+        with tempfile.TemporaryDirectory() as folder, \
+                patch("stuffapp.desktop.run", return_value=desktop_available) as desktop, \
+                patch("stuffapp.ui.ConsoleUI", return_value=ui):
+            main(arguments + ["--data", folder])
+        self.assertEqual(desktop.call_count, 0 if arguments else 1)
+        self.assertIn("YetAnotherStuffApp", "\n".join(output))
+
     def test_desktop_gui_is_preferred_when_not_forcing_console(self):
         with tempfile.TemporaryDirectory() as folder:
             with patch("stuffapp.desktop.run", return_value=True) as run_gui:
@@ -168,6 +210,14 @@ class ScriptedApp(TempStoreTestCase):
         self.run_app(["15", "1", "0", "0"])
         self.assertIn(guide.topic_text(0).splitlines()[0], self.text())
 
+    def test_help_about_and_menu_display_current_version(self):
+        from stuffapp import __version__
+
+        about = guide.topic_titles().index("About") + 1
+        self.run_app(["15", str(about), "0", "0"])
+        self.assertIn("YetAnotherStuffApp %s" % __version__, self.text())
+        self.assertIn(guide.ABOUT_TEXT, self.text())
+
     def test_create_item_with_more_details(self):
         self.store.create_box("Kitchen")
         self.run_app(["4", "1", "1"] + ITEM_FORM + [
@@ -254,6 +304,13 @@ class ScriptedApp(TempStoreTestCase):
 
 
 class GuideTests(unittest.TestCase):
+    def test_about_paragraphs_wrap_naturally_without_embedded_line_breaks(self):
+        paragraphs = guide.ABOUT_TEXT.strip().split("\n\n")
+        self.assertGreater(len(paragraphs), 2)
+        self.assertTrue(all("\n" not in paragraph for paragraph in paragraphs))
+        self.assertIn("do not prove that", guide.ABOUT_TEXT)
+        self.assertIn("Python uses Tkinter", guide.ABOUT_TEXT)
+
     def test_example_item_file_imports(self):
         from stuffapp.importer import parse_item_text
         fields = parse_item_text(guide.ITEM_FILE_EXAMPLE)

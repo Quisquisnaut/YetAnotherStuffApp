@@ -1,4 +1,18 @@
-"""In-app help and guides (English). Shared by the console and touch UIs."""
+"""In-app help and guides (English). Shared by all three interfaces."""
+
+from . import __version__
+
+APP_TITLE = "YetAnotherStuffApp %s" % __version__
+ABOUT_TEXT = "\n\n".join([
+    APP_TITLE,
+    "An offline inventory of boxes, items, photos and customizable item types.",
+    "Data stays in your chosen data folder. Cloud location labels do not prove "
+    "that two devices have synchronized their data.",
+    "Windows packages require Python; they are not standalone executables.",
+    "Pythonista provides the iPhone/iPad touch interface. Desktop Python uses "
+    "Tkinter when available, otherwise text menus; --console forces text menus.",
+    "Use --version to display the version without opening your inventory.",
+])
 
 ITEM_FILE_EXAMPLE = """Name: Cordless drill
 Box: Garage
@@ -220,7 +234,7 @@ The search results can be exported the same way. Exported files are saved
 in the "exports" folder inside the data folder."""),
 
     ("Trash, backups and recovery", """\
-Nothing is lost by accident:
+Recovery tools have limits; keep independent copies of important data:
 
 - Trash: deleted items and boxes stay in the Trash for 30 days and can be
   restored from there. If an item's box no longer exists, you choose a new
@@ -233,7 +247,8 @@ Nothing is lost by accident:
   "before-restore" backup, so a restore can be undone too.
 - Reset data folder (Settings): clears boxes, items, photos, custom types,
   trash and exports after saving a "before-reset" backup. Existing backups
-  are kept, so the previous data can be restored.
+  are kept. Current backups exclude trash and exports: copy the entire data
+  folder with the app closed before resetting if you need those files.
 
 For extra safety copy the "backups" folder to another device from time to
 time."""),
@@ -247,19 +262,35 @@ Settings > data folder lets you move it, for example into iCloud Drive
 (on iPhone with Pythonista) or a synced folder (OneDrive, Dropbox...) on a
 computer. If the new folder is empty you are offered to copy your data.
 
-Do not edit the same data on two devices at the same moment: the last save
-wins. The STUFFAPP_DATA environment variable or the --data option override
-the data folder."""),
+In Pythonista, a project opened from Files may already be in iCloud Drive
+(com~apple~CloudDocs). Settings calls this "iCloud Drive (project folder)"
+and keeps using StuffData next to that project. The dedicated Pythonista
+iCloud folder is a separate location and need not be available.
+
+Changing a data folder or accepting a copy can overwrite files. Until the
+data-copy safeguards are completed, use a genuinely empty destination and
+back up both locations independently. Do not merge two inventories by
+copying their files over each other.
+
+An iCloud label recognizes a location; it does not verify synchronization
+with Windows. Do not edit the same data on two devices at the same moment:
+the last save wins. --data overrides STUFFAPP_DATA, which overrides Settings;
+without any of these, StuffData next to main.py is used."""),
 
     ("Platforms", """\
 - iPhone / iPad: open main.py in Pythonista and press Run for the touch
   interface.
-- Windows, Linux, macOS: run "python main.py" for the text menus.
+- Windows, Linux, macOS: run "python main.py" for the Tkinter desktop GUI.
+  If Tkinter or a display is unavailable, the app uses the text menus.
+- Windows launcher: double-click "Start Stuff App.bat" for the GUI; in a
+  terminal use '"Start Stuff App.bat" --console' for text menus.
 - Android: run "python main.py" in Termux (or Pydroid 3).
 - "python main.py --console" forces the text menus everywhere.
 
 In the text menus type the number of a choice and press Enter; an empty
 answer or 0 goes back."""),
+
+    ("About", ABOUT_TEXT),
 ]
 
 

@@ -11,6 +11,7 @@ import subprocess
 import sys
 
 from .images import to_jpeg_bytes
+from .terminal import supports_ansi
 
 TEXT_FILE_EXTS = (".txt", ".md", ".markdown", ".json")
 IMAGE_FILE_EXTS = (".jpg", ".jpeg", ".png", ".heic")
@@ -76,12 +77,10 @@ class ConsoleUI(object):
         self.docs_dir = docs_dir or os.getcwd()
         self.opener = system_opener() if opener == "auto" else opener
         self.skip = ()  # folders hidden from file pickers (the app's image store)
-        if color is None:
-            try:
-                color = sys.stdout.isatty()
-            except (AttributeError, OSError):
-                color = False
-        self.color = bool(color) and "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
+        if "NO_COLOR" in os.environ or os.environ.get("TERM") == "dumb":
+            self.color = False
+        else:
+            self.color = supports_ansi() if color is None else bool(color)
 
     def _style(self, text, code):
         return "\033[%sm%s\033[0m" % (code, text) if self.color else text

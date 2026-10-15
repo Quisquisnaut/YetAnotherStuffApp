@@ -4,6 +4,9 @@ import shutil
 import tempfile
 import unittest
 import zipfile
+import hashlib
+import json
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -38,6 +41,42 @@ class WindowsReleaseTest(unittest.TestCase):
         self.assertIn(b"\r\n", bat)
         self.assertNotIn(b"\n", bat.replace(b"\r\n", b""))
         self.assertIn(b"main.py", bat)
+
+    def test_all_platforms_have_verified_inventory_and_no_private_files(self):
+        tool = load_tool()
+        from stuffapp import __version__
+
+        for platform in ("windows", "pythonista", "source"):
+            with self.subTest(platform=platform):
+                path = tool.build(self.out, platform=platform)
+                self.assertEqual(Path(path).name, "YetAnotherStuffApp-%s-%s.zip" % (__version__, platform))
+                with zipfile.ZipFile(path) as archive:
+                    contents = {name.split("/", 1)[1]: archive.read(name) for name in archive.namelist()}
+                manifest = json.loads(contents.pop("BUILD-INFO.json"))
+                self.assertEqual(manifest["version"], __version__)
+                self.assertEqual(manifest["platform"], platform)
+                self.assertEqual(manifest["step"], "00")
+                self.assertEqual(manifest["build_kind"], "test")
+                self.assertTrue(manifest["source_commit"])
+                self.assertEqual(manifest["files"], {
+                    name: hashlib.sha256(content).hexdigest() for name, content in contents.items()})
+                self.assertIn("stuffapp/touch.py", contents)
+                self.assertIn("stuffapp/desktop.py", contents)
+                self.assertEqual("Start Stuff App.bat" in contents, platform == "windows")
+                self.assertEqual("PYTHONISTA-SETUP.txt" in contents, platform == "pythonista")
+                self.assertFalse(any(name.startswith(("StuffData/", "tests/", "docs/", "tools/"))
+                                     or "settings.json" in name or "__pycache__" in name for name in contents))
+
+    def test_invalid_platform_does_not_create_an_archive(self):
+        with self.assertRaises(ValueError):
+            load_tool().build(self.out, platform="invalid")
+        self.assertEqual(os.listdir(self.out), [])
+
+    def test_repeated_build_has_identical_bytes(self):
+        tool = load_tool()
+        path = Path(tool.build(self.out))
+        first = path.read_bytes()
+        self.assertEqual(Path(tool.build(self.out)).read_bytes(), first)
 
 
 if __name__ == "__main__":

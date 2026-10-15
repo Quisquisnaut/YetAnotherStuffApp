@@ -1,0 +1,19 @@
+YetAnotherStuffApp for Pythonista 3 - test package (Step 00)
+
+1. Extract the ZIP in Files. Keep main.py and stuffapp in the same project
+   folder. Copy/open the entire folder in Pythonista, then run main.py.
+   The archive contains no inventory or device settings.
+2. If the project is in iCloud Drive, Settings may show
+   "iCloud Drive (project folder)". StuffData remains next to the project;
+   recognizing this path does not copy data or verify synchronization.
+   The dedicated Pythonista iCloud container is a separate location.
+3. Help > About and Settings > About show the installed app version.
+4. For a clean test use a new project folder with an empty inventory. Before
+   updating an existing project, close the app and keep an independent copy
+   of the complete StuffData folder and stuffapp_settings.json. Replace only
+   the app code; keep your data and settings. Do not merge inventories.
+5. Do not edit the same inventory simultaneously on multiple devices.
+   There is no automatic conflict-safe Windows/iCloud synchronization.
+6. Console alternative: run main.py --console. BUILD-INFO.json records the
+   version, Step 00, base commit and SHA-256 inventory of this test package.
+   Native touch rendering and iCloud availability require an iPhone test.

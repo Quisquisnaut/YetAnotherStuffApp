@@ -8,6 +8,7 @@ from . import backup, config, export, guide
 from .app import KIND_CHOICES, KIND_NAMES, TRASH_DAYS, describe_filters, reminder_line, startup
 from .importer import import_item_file, suggested_box, suggested_type
 from .images import to_jpeg_bytes
+from .desktop_dialogs import ask_text, focus_on_open
 from .storage import EXTRA_PREFIX, SORT_KEYS, Store, StorageError, field_options
 
 
@@ -24,7 +25,7 @@ class DesktopApp(object):
         self.item_ids = []
         self.filters = {}
         self.fields = {}
-        self.root.title("YetAnotherStuffApp")
+        self.root.title(guide.APP_TITLE)
         self.root.geometry("1000x680")
         self._build()
         messages = startup(self.store)
@@ -135,13 +136,17 @@ class DesktopApp(object):
         for label, action in (
                 ("Reminders", self.show_reminders), ("Trash", self.show_trash),
                 ("Backups", self.show_backups), ("Item types", self.show_types),
-                ("Settings", self.show_settings), ("Help", self.show_help)):
+                ("Settings", self.show_settings)):
             tools_menu.add_command(label=label, command=lambda action=action: self._call(action))
         search_menu = self.tk.Menu(menu, tearoff=False)
         menu.add_cascade(label="Search", menu=search_menu)
         for label, action in (("Filters...", self.edit_filters), ("Clear filters", self.clear_filters),
                               ("Export results...", self.export_results)):
             search_menu.add_command(label=label, command=lambda action=action: self._call(action))
+        help_menu = self.tk.Menu(menu, tearoff=False)
+        menu.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="User guide", command=self.show_help)
+        help_menu.add_command(label="About", command=self.show_about)
 
     def _selected_box(self):
         selection = self.box_tree.selection()
@@ -200,7 +205,7 @@ class DesktopApp(object):
         return selected[0]
 
     def _ask(self, title, prompt, initial=""):
-        return self.simpledialog.askstring(title, prompt, initialvalue=initial, parent=self.root)
+        return ask_text(self.root, title, prompt, initial)
 
     def _choose_box(self, title, boxes=None, include_all=False):
         boxes = self.store.list_boxes() if boxes is None else boxes
@@ -282,13 +287,10 @@ class DesktopApp(object):
         self._box_dialog(self.store.get_box(box_id))
 
     def _box_dialog(self, box=None):
-        label = self.simpledialog.askstring("Box", "Label", initialvalue=(box or {}).get("label", ""),
-                                            parent=self.root)
+        label = self._ask("Box", "Label", (box or {}).get("label", ""))
         if label is None:
             return
-        description = self.simpledialog.askstring("Box", "Description",
-                                                  initialvalue=(box or {}).get("description", ""),
-                                                  parent=self.root)
+        description = self._ask("Box", "Description", (box or {}).get("description", ""))
         if description is None:
             description = (box or {}).get("description", "")
         if box:
@@ -445,6 +447,7 @@ class DesktopApp(object):
         footer.grid(row=2, column=0, sticky="e")
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(6, 0))
         ttk.Button(footer, text="Save", command=save).pack(side="right")
+        focus_on_open(window, widgets["name"])
 
     def _item_dialog_fields(self, item, type_id):
         rows = [("name", "Name", "line", (item or {}).get("name", ""))]
@@ -810,6 +813,9 @@ class DesktopApp(object):
         index = self._choose("Help", titles)
         if index is not None:
             self.messagebox.showinfo(titles[index], guide.topic_text(index), parent=self.root)
+
+    def show_about(self):
+        self.messagebox.showinfo("About", guide.ABOUT_TEXT, parent=self.root)
 
     def show_types(self):
         while True:

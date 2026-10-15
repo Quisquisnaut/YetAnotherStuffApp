@@ -19,11 +19,17 @@ YetAnotherStuffApp for Windows - quick setup
    Tip: right-click the .bat > Send to > Desktop (create shortcut).
 
 4. Use it
-   The app opens text menus: type the number of a choice and press Enter
-   (0 = back). Start with Help, or Create Box, then Create Item.
+   The app opens a desktop window (Tkinter). Start with Help > User guide,
+   or New box, then New item. The window title and Help > About show the
+   version. Close the window or choose File > Exit to quit.
+   For text menus, open a terminal in the app folder and run:
+       "Start Stuff App.bat" --console
+   Type a choice number and press Enter (0 = back/exit). If Tkinter or a
+   graphical display is unavailable, text menus are used automatically.
+   To display the version without opening data: py -3 main.py --version
    - Your data is in the StuffData folder next to the app. To keep it in
-     OneDrive / Dropbox (e.g. shared with Pythonista on an iPhone), use
-     main menu > Settings: data folder, or start with:
+     another folder, use Tools > Settings (console: Settings: data folder),
+     or start with:
          py main.py --data "%USERPROFILE%\OneDrive\StuffData"
    - Exports (PDF / Markdown) open with your default viewer.
    - To import an item text file or photos, put them in the app folder
@@ -32,7 +38,14 @@ YetAnotherStuffApp for Windows - quick setup
      (without it, JPEG photos only).
 
 5. Update
-   Unzip the new version over the old folder (or into a new folder and
-   move StuffData and stuffapp_settings.json into it). Your data is never
-   inside the stuffapp folder. The app makes automatic backups (Backups
-   in the main menu).
+   Close the app. Make an independent copy of the complete StuffData folder
+   and stuffapp_settings.json, then replace only app code from the ZIP.
+   The ZIP contains no inventory or device settings; keep yours in place.
+   Test new builds in a separate folder with --data pointing to an empty
+   test folder. Do not merge inventories by copying over each other.
+
+This ZIP requires Python. It is not a standalone .exe. Test packages are
+not approved releases. BUILD-INFO.json identifies the version, Step 00,
+base commit and SHA-256 file inventory (including uncommitted app changes).
+iCloud folder recognition on iPhone does not establish synchronization
+with Windows. Avoid simultaneous edits on multiple devices.
