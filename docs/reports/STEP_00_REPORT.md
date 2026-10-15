@@ -2,9 +2,9 @@
 
 **Data:** 15 ottobre 2026\
 **Versione precedente / nuova:** `0.3.0` → `0.3.2`; build intermedia `0.3.1` corretta dopo il collaudo Windows dell'utente; consolidato il riferimento iOS `0.3.0+ios.2`.\
-**Branch:** `step-00-stabilization`, nel checkout originale `C:\YASA\YetAnotherStuffApp`, senza worktree.\
-**Commit base:** `c1094e355ce6c259f58e16434e1ab7bd3375e205`. Go dell'utente ricevuto per il commit locale dello Step 0 sul branch indicato.\
-**Stato:** **IN VERIFICA** — verifiche automatiche locali e build completate; collaudi Windows, console e Pythonista confermati dall'utente. Resta la verifica del workflow remoto, non eseguito senza autorizzazione al push.
+**Branch:** sviluppo su `step-00-stabilization`, nel checkout originale `C:\YASA\YetAnotherStuffApp`, senza worktree; integrazione autorizzata in `main`.\
+**Commit base / applicativo:** `c1094e355ce6c259f58e16434e1ab7bd3375e205` / `00fdc7f4de58b0e07cebfee435398c82ea9b0112`.\
+**Stato:** **APPROVATO** — verifiche locali, collaudi dell'utente e pipeline remota completati con successo; merge fast-forward e push autorizzati ed eseguiti. Nessun tag o release; Step 1 non iniziato.
 
 ## Ambito previsto
 
@@ -49,14 +49,14 @@ Confrontati separatamente `config.py`, `touch.py` e `__init__.py` del repository
 
 - `.github/workflows/windows-release.yml`: console eseguita esplicitamente con `--console` sul codice estratto; smoke separati per launcher Windows e GUI Tkinter che termina autonomamente.
 - Timeout per processi, step e job; in caso di timeout viene terminato anche l'albero del launcher Windows. Un timeout o un errore di avvio fa fallire la verifica.
-- Test e smoke console configurati anche su Linux/macOS con Python 3.12. **Questi runner non sono stati eseguiti in questa sessione locale.**
+- Test e smoke console eseguiti anche su Linux/macOS con Python 3.12 nei runner GitHub Actions, con esito positivo; non eseguiti localmente su questi sistemi.
 - Artefatti separati per sistema operativo, con pacchetti e JSON di smoke, conservati in CI per 14 giorni. Upload tentato anche in caso di fallimento, quando esistono file.
 - Il launcher batch mantiene gli argomenti, restituisce il codice d'uscita Python e supporta `STUFFAPP_NO_PAUSE=1` per i controlli automatici; uso normale con pausa sugli errori conservato.
 - `tools/make_release.py`: preservato l'uso precedente `build(out_dir)`/build Windows predefinita; aggiunti pacchetti `pythonista` e `source`, `--platform all`, build di test predefinita e manifest deterministico `BUILD-INFO.json`.
 - Manifest: versione, piattaforma, Step `00`, tipo build, commit base, hash di ogni file e digest dell'inventario del pacchetto. Il commit base **non è il commit finale del codice modificato**: i contenuti non committati sono identificati dagli hash.
 - `tools/smoke_release.py`: verifica inventario, hash, percorsi, duplicati, contenuti inattesi, limiti e versione runtime prima dell'avvio; estrae in directory temporanee, usa `--data` esplicito, verifica console/About e opzionalmente launcher/GUI.
 - Espansione degli argomenti `*.zip` gestita nello script anche sotto PowerShell. Lo strumento è destinato esclusivamente ai pacchetti locali fidati, non a eseguire archivi di provenienza sconosciuta.
-- Nessun accesso a GitHub, esecuzione remota di Actions o pubblicazione di release effettuato. Rimane configurato il flusso preesistente di pubblicazione su tag esplicito, con verifica aggiunta di corrispondenza tag/versione.
+- Dopo l'autorizzazione esplicita «Merge e poi push», eseguiti merge fast-forward in `main`, push a `origin/main` e verifica della pipeline remota. Nessun tag o release pubblicato. Rimane configurato il flusso preesistente di pubblicazione su tag esplicito, con verifica aggiunta di corrispondenza tag/versione.
 
 ## Test automatici
 
@@ -73,7 +73,7 @@ Confrontati separatamente `config.py`, `touch.py` e `__init__.py` del repository
 | Sintassi di `main.py` e dei moduli `stuffapp` | **17 file** compilati con l'interprete locale e analizzati anche con grammatica Python 3.8; non equivale a test runtime su Python 3.8/Pythonista |
 | `git diff --check` | Uscita **0** |
 | Dati prima/dopo la verifica finale | **13 file**, inventario principale e inventari/impostazioni estratti sotto `dist/`; fingerprint SHA-256 uguale, nessuna variazione rilevata |
-| Riferimento `main` | Ancora al commit base `c1094e355ce6c259f58e16434e1ab7bd3375e205` |
+| Riferimento `main` alla verifica prima del commit | Al commit base `c1094e355ce6c259f58e16434e1ab7bd3375e205`; successivamente aggiornato al commit applicativo dopo autorizzazione esplicita |
 
 Il fallimento iniziale era `tests.test_app.ConsoleUIStyleTest.test_terminal_styles_can_be_enabled`: dipendeva dall'ambiente del terminale, mentre il codice rispetta `NO_COLOR` e `TERM=dumb`. Il test ora isola l'ambiente e una regressione verifica esplicitamente `TERM=dumb`. Questa prima correzione riguardava il test; il successivo intervento ANSI Windows descritto sopra conserva la precedenza di queste impostazioni.
 
@@ -92,6 +92,20 @@ Fingerprint dei dati prima/dopo la verifica finale: `2de3261862c3ace884bf48cd16f
 Completata una revisione in sola lettura di diff, nuovi file, requisiti e prove, senza modificare branch, indice o dati. Nessun rilievo critico/importante. L'unico rilievo minore era un oracolo troppo debole nello smoke console: due menu con la versione avrebbero potuto simulare l'avvenuta visualizzazione di About. Aggiunta una regressione che disabilita Help nel vero pacchetto temporaneo mantenendo hash validi: il test ha fallito prima della correzione ed è passato dopo. Lo smoke ora richiede l'intero testo About della guida estratta. Il revisore ha confermato il rilievo risolto; suite completa e smoke console/launcher rieseguiti con successo dopo la correzione. Nessuna modifica ai contenuti degli ZIP, perché lo strumento non è distribuito al loro interno.
 
 Il follow-up sul collaudo ha individuato un altro caso limite ANSI: occorre garantire elaborazione dell'output e VT insieme. Aggiunte due regressioni (modalità `0/2/4/6` e abilitazione fallita), rosse prima e verdi dopo la correzione. Il revisore ha confermato la risoluzione, senza rilievi residui. Le verifiche finali qui riportate si riferiscono alla `0.3.2` corretta.
+
+### Integrazione e verifica remota finale
+
+Dopo il Go al commit e il successivo comando esplicito «Merge e poi push», `main` e `origin/main` sono stati aggiornati tramite fast-forward al commit applicativo `00fdc7f`. Nessun nuovo commit di merge, conflitto, PR o push forzato. La suite locale era gia passata prima del commit; e stata ripetuta dopo il fast-forward con **175 passati in 48,089 s**. Questa ripetizione era ridondante, essendo identico il commit: su richiesta dell'utente, `AGENTS.md` ora prescrive di evitare queste ripetizioni e di non eseguire test per sole modifiche a documentazione o pacchetti di distribuzione.
+
+[Workflow GitHub Actions 38781729987](https://github.com/Quisquisnaut/YetAnotherStuffApp/actions/runs/38781729987), commit `00fdc7f`, evento push su `main`: **success**.
+
+| Runner, Python 3.12 | Suite | Build e console dei tre pacchetti | Launcher / GUI / focus |
+|---|---|---|---|
+| Windows | 175 passati, 0 skip, 16,277 s | OK | OK / OK / OK |
+| Linux | 174 passati, 1 skip, 11,341 s | OK | Non applicabili |
+| macOS | 174 passati, 1 skip, 11,777 s | OK | Non applicabili |
+
+Il test saltato su Linux/macOS riguarda il launcher Windows. Job di pubblicazione release **skipped**, come previsto senza tag. Upload artefatti riuscito su tutti e tre i runner; pacchetti e JSON scaricati in [dist/ci-step-00/38781729987](../../dist/ci-step-00/38781729987) e JSON controllati. I pacchetti locali gia collaudati dall'utente non sono stati rigenerati.
 
 ## Build prodotte
 
@@ -162,19 +176,19 @@ Usare cartelle di prova separate. Per un controllo con dati esistenti, fare prim
 
 ### CI e altre piattaforme
 
-- [ ] Dopo eventuale autorizzazione all'integrazione/remoto, eseguire il workflow corretto: test, console di tutti gli ZIP, launcher Windows, GUI con chiusura automatica e upload artefatti devono completarsi entro i timeout.
-- [ ] Verificare i job Linux/macOS con Python 3.12; scaricare gli artefatti di prova e controllare i JSON. Nessuna pubblicazione/tag durante il collaudo dello Step 0.
+- [x] Dopo autorizzazione all'integrazione/remoto, eseguito il workflow corretto: test, console di tutti gli ZIP, launcher Windows, GUI con chiusura automatica e upload artefatti completati entro i timeout.
+- [x] Verificati i job Linux/macOS con Python 3.12; scaricati gli artefatti di prova e controllati i JSON. Nessuna pubblicazione/tag durante il collaudo dello Step 0.
 - [ ] Eventuale prova console su Android/Termux: avvio, versione/About, uscita e inventario di prova. Non eseguita in questa sessione.
 
 **Collaudi storici riconosciuti:** baseline Windows `0.3.0` e Settings iPhone `0.3.0+ios.2` confermati dall'utente. Il collaudo Windows `0.3.1` ha generato le cinque richieste di correzione sopra descritte. Queste prove non valgono come approvazione visuale della `0.3.2`.
 
-**Collaudo finale 0.3.2:** l'utente ha comunicato «Windows OK. Console OK. Pythonista OK» e successivamente ha dato il Go al commit locale. Nessun Go a merge, push o avvio dello Step 1 è stato ricevuto.
+**Collaudo finale 0.3.2:** l'utente ha comunicato «Windows OK. Console OK. Pythonista OK», ha dato il Go al commit locale e successivamente ha autorizzato «Merge e poi push». Step 1 non autorizzato e non iniziato.
 
 ## Difetti e problemi aperti
 
 | Problema | Stato, conseguenze e seguito |
 |---|---|
-| Workflow bloccato sul launcher GUI | Corretto; comandi equivalenti eseguiti localmente con esito positivo. Esecuzione effettiva su GitHub **ancora non effettuata**, senza push autorizzato |
+| Workflow bloccato sul launcher GUI | Risolto; verifiche locali e workflow GitHub `38781729987` completati con successo, inclusi launcher Windows e GUI/focus |
 | Launcher perde il codice di errore dopo `pause` | Riprodotto (`7` diventava `0`), corretto e coperto da regressione Windows |
 | Test colori dipendente dal terminale | Difetto di isolamento preesistente corretto nel test; successivo supporto ANSI Windows verificato separatamente. Suite finale tutta verde |
 | Glob ZIP sotto PowerShell | Rilevato e corretto nello smoke script; regressione passata |
@@ -188,12 +202,12 @@ Non sono emersi fallimenti irrisolti nei 175 test finali o negli smoke della 0.3
 
 ## Stato del piano
 
-- Step 0: implementazione, revisione, suite, pacchetti e smoke locali pronti; collaudi Windows, console e Pythonista approvati dall'utente, Go al commit locale ricevuto. Resta la futura verifica Actions prima della chiusura del gate della pipeline.
+- Step 0: **APPROVATO e integrato**; implementazione, revisione, suite, pacchetti, smoke, collaudi dell'utente e verifica Actions completati. Merge fast-forward e push eseguiti dopo autorizzazione esplicita.
 - Step 1–13: **non iniziati**. Nessuna modifica alle operazioni di copia/backup/reset è anticipata.
-- `main` e i riferimenti remoti sono invariati; Go limitato al commit sul branch `step-00-stabilization`. Nessun merge, push, tag o release effettuato. I pacchetti restano locali in `dist/`, ignorata da Git.
+- Commit applicativo `00fdc7f` integrato in `main` e pubblicato su `origin/main`. Aggiornamento conclusivo di sola documentazione, incluse le regole sui test in `AGENTS.md`, senza rilanciare la CI. Nessun tag o release effettuato. I pacchetti locali restano in `dist/`, ignorata da Git; artefatti di prova disponibili anche nel run GitHub.
 
 ## Decisione di avanzamento
 
-**Approvazione dell'utente: RICEVUTA per i collaudi Windows, console e Pythonista e per il commit locale dello Step 0.**
+**Approvazione dell'utente: RICEVUTA per i collaudi Windows, console e Pythonista, il commit locale, il merge in main e il push.**
 
-Creare il commit sul branch locale senza integrare in `main`, effettuare push o pubblicazioni o iniziare lo Step 1. Queste azioni richiedono successive istruzioni esplicite. Il workflow remoto resta non verificato e non viene dichiarato verde.
+Step 0 chiuso dopo la conferma della pipeline verde. Non creare tag o release e non iniziare lo Step 1 senza successive istruzioni esplicite.

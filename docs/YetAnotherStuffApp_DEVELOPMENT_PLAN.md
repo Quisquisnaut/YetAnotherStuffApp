@@ -4,7 +4,7 @@
 **Repository di riferimento:** `Quisquisnaut/YetAnotherStuffApp`\
 **Branch di partenza verificato:** `main`, commit `c1094e355ce6c259f58e16434e1ab7bd3375e205` (14 ottobre 2026)\
 **Versione esaminata:** `0.3.0`\
-**Stato aggiornato (15 ottobre 2026):** **Step 0 in verifica del workflow remoto** sul branch locale `step-00-stabilization`, versione condivisa `0.3.2`. Fix iOS `0.3.0+ios.2` esaminato e consolidato; feedback Windows sulla `0.3.1` recepito. 175 test locali superati anche prima del commit, revisione completata e pacchetti Windows/Pythonista/sorgente verificati in `dist/`, inclusi focus/tastiera Windows. Collaudi finali Windows, console e Pythonista confermati OK dall'utente; Go al commit locale ricevuto. Workflow remoto ancora da eseguire. `main` invariato; nessun merge, push o pubblicazione.\
+**Stato aggiornato (15 ottobre 2026):** **Step 0 APPROVATO e integrato** in `main`, versione condivisa `0.3.2`, commit applicativo `00fdc7f`. Fix iOS `0.3.0+ios.2` consolidato; feedback Windows recepito. 175 test locali superati prima del commit; collaudi Windows, console e Pythonista confermati OK dall'utente. Merge fast-forward e push eseguiti dopo autorizzazione esplicita. [CI verde su Windows, Linux e macOS](https://github.com/Quisquisnaut/YetAnotherStuffApp/actions/runs/38781729987). Nessun tag o release; Step 1 non iniziato.\
 **Destinazione prevista nel repository:** `docs/DEVELOPMENT_PLAN.md` (da pubblicare quando saranno disponibili i permessi).\
 **File attuale:** copia locale del piano, non sincronizzata con GitHub.
 
@@ -16,8 +16,9 @@
 - Completata l'implementazione locale dello Step 0: pipeline console/GUI con timeout, gestione errori launcher, versione centrale `0.3.2`, Help > About, istruzioni e pacchetti con inventario/hash. Suite completa: **175 passati, 0 fallimenti, 0 skip**. Smoke dei pacchetti estratti e focus/tastiera Windows superati; inventari principali e delle estrazioni di prova invariati durante la verifica. Revisione indipendente e follow-up completati, rilievi risolti.
 - Feedback Windows `0.3.1` corretto nella `0.3.2`: About senza a capo forzati, focus Description dopo Label/Invio, focus iniziale Name, Help solo nel proprio menu e colori ANSI Windows verificati/abilitati con fallback a testo semplice. Probe nativo red sulla `0.3.1` e verde sulla `0.3.2`; archivi precedenti conservati.
 - Collaudo finale `0.3.2` confermato dall'utente: **Windows OK, Console OK, Pythonista OK**; successivo Go al commit locale sul branch. Verifica prima del commit: 175 test passati, 13 file dati/impostazioni invariati e contenuti degli ZIP corrispondenti ai sorgenti attuali.
-- Resta aperta la verifica del workflow GitHub corretto (non tentato senza push autorizzato). Linux/macOS configurati in CI, non eseguiti localmente.
-- Rapporto e checklist: [docs/reports/STEP_00_REPORT.md](reports/STEP_00_REPORT.md); build locali in `dist/`. Stato dello Step 0: collaudo locale approvato, **in verifica del workflow remoto**, non integrato in GitHub. Step 1 non iniziato.
+- Autorizzazione esplicita «Merge e poi push» ricevuta: `main` aggiornato tramite fast-forward a `00fdc7f` e pubblicato su `origin/main`. [Workflow 38781729987](https://github.com/Quisquisnaut/YetAnotherStuffApp/actions/runs/38781729987) completato con successo su Windows, Linux e macOS; artefatti scaricati e JSON di console, launcher e GUI/focus controllati. Nessuna release pubblicata.
+- Rapporto e checklist: [docs/reports/STEP_00_REPORT.md](reports/STEP_00_REPORT.md); build locali in `dist/`. Stato dello Step 0: **APPROVATO e integrato**. Step 1 non iniziato.
+- Regola operativa richiesta dall'utente e salvata in `AGENTS.md`: niente suite ridondanti per fast-forward dello stesso commit verificato; niente test per sole modifiche a documentazione o pacchetti di distribuzione. Usare controlli di coerenza/integrita pertinenti e non rilanciare la CI per tali aggiornamenti.
 
 ## 1. Obiettivi e limiti
 
@@ -68,7 +69,7 @@ Migliorare affidabilità, sicurezza, usabilità, importazione, catalogazione e d
 - Definire nomi, versione e inventario dei pacchetti: ZIP Windows richiedente Python, archivio Pythonista, archivio sorgente/console. Non promettere un `.exe` autonomo senza una specifica fase aggiuntiva.
 - **Difetto iOS già corretto localmente e validato visivamente:** rilevamento delle cartelle esterne di iCloud Drive in Pythonista, senza spostare o sovrascrivere `StuffData`. Consolidare fix e test nella futura build condivisa; non interpretare la corretta etichetta iCloud come prova di sincronizzazione tra dispositivi.
 
-**Controllo visivo/manuale:** estrarre ZIP pulito; avviare GUI Windows, uscire correttamente; avviare `--console`, uscire; verificare numero versione e Help > About; seguire le istruzioni di installazione su una cartella nuova. Confermare il riconoscimento della cartella iCloud e la preservazione del percorso dati su iOS. La build Windows da `main` è stata segnalata come funzionante dall’utente, ma lo smoke test del workflow corretto è ancora da eseguire.
+**Controllo visivo/manuale:** estrarre ZIP pulito; avviare GUI Windows, uscire correttamente; avviare `--console`, uscire; verificare numero versione e Help > About; seguire le istruzioni di installazione su una cartella nuova. Confermare il riconoscimento della cartella iCloud e la preservazione del percorso dati su iOS. **Esito finale:** Windows, console e Pythonista confermati OK dall'utente sulla `0.3.2`; smoke del workflow corretto superati su GitHub.
 
 ### Step 1 — Sicurezza delle operazioni sui dati e backup/reset
 
@@ -275,7 +276,7 @@ Al termine dello step consegnare **sia il rapporto sia le build**. Il rapporto n
 
 | Step | Stato | Build | Test automatici | Controllo visuale | Rapporto |
 |---|---|---|---|---|---|
-| 0. Pipeline / build / versione / iCloud | **In verifica CI remota; Go al commit locale ricevuto** | Windows/Pythonista/sorgente `0.3.2` in `dist/`; `0.3.1` conservate | 175 passati anche prima del commit; console/launcher/GUI/focus OK; Actions remoto da eseguire | Windows, console e Pythonista `0.3.2` confermati OK dall'utente | [STEP_00_REPORT](reports/STEP_00_REPORT.md) |
+| 0. Pipeline / build / versione / iCloud | **APPROVATO e integrato in main** | Windows/Pythonista/sorgente `0.3.2` in `dist/`; `0.3.1` conservate | 175 passati locali; CI Windows/Linux/macOS verde; console/launcher/GUI/focus OK | Windows, console e Pythonista `0.3.2` confermati OK dall'utente | [STEP_00_REPORT](reports/STEP_00_REPORT.md) |
 | 1. Dati / backup / reset | Da iniziare | No | No | No | No |
 | 2. Ordinamento box | Da iniziare | No | No | No | No |
 | 3. Tag box / filtri / ordinamento tag | Da iniziare | No | No | No | No |
@@ -290,7 +291,7 @@ Al termine dello step consegnare **sia il rapporto sia le build**. Il rapporto n
 | 12. Galleria / aggiunta rapida | Da iniziare | No | No | No | No |
 | 13. Ricerca / Help / regressioni | Da iniziare | No | No | No | No |
 
-**Nota di contesto (verifica iniziale del 15 ottobre 2026):** il workflow Windows ha eseguito correttamente 138 test e creato il pacchetto, ma il controllo di avvio del launcher è rimasto bloccato finché il job è stato annullato. Correggere questo problema nello Step 0 e rieseguire la pipeline prima di considerarla verde.
+**Nota di contesto (verifica iniziale del 15 ottobre 2026):** il workflow Windows aveva eseguito correttamente 138 test e creato il pacchetto, ma il controllo di avvio del launcher era rimasto bloccato finché il job era stato annullato. Problema corretto nello Step 0 e pipeline rieseguita con successo: run `38781729987`.
 
 **Esclusioni correnti:** supporto Unicode esteso per PDF; creazione automatica di un `.exe` Windows; sincronizzazione automatica bidirezionale senza un meccanismo di conflitto robusto; nuove funzionalità non espressamente approvate.
 
