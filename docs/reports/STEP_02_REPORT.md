@@ -2,7 +2,7 @@
 
 **Data:** 16 ottobre 2026. **Versione precedente / nuova:** 0.3.7 / **0.3.8**.
 
-**Branch:** `feature/step-02-box-sorting`, senza worktree. **Base:** `2b7f1bd5a9cf2246d1586a207d0f8a130da7152c`. **Stato: APPROVATO — Go ricevuto** — opzione A implementata, verifiche automatiche locali e build completate. Autorizzati commit sul branch, merge nel `main` locale e successivo push; integrazione in corso. Nessuna PR, tag o release prevista. La checklist visiva conserva le voci non confermate singolarmente.
+**Branch:** `feature/step-02-box-sorting`, senza worktree. **Base:** `2b7f1bd5a9cf2246d1586a207d0f8a130da7152c`. **Commit applicativo:** `8d93d060425a32e3d06db1f9757e1b0921321e81`. **Stato: APPROVATO e integrato in main** — Go ricevuto; commit sul branch, merge fast-forward nel `main` locale e successivo push completati. CI verde su Windows, Linux e macOS. Nessuna PR, tag o release. La checklist visiva conserva le voci non confermate singolarmente.
 
 ## Ambito approvato
 
@@ -44,7 +44,7 @@ Copertura nuova: tutti gli otto ordini con risultati attesi indipendenti, spareg
 
 **Dati preesistenti:** 18 file di inventario/impostazioni invariati prima/dopo la suite. Fingerprint SHA-256 aggregato `d97e55fa770baee3ab0620594ab14470efe1c75060611387181075098f198dbf`. Ambito: `StuffData`/impostazioni della radice e delle estrazioni preesistenti sotto `dist/`. Le verifiche usano inventari temporanei; nessuna migrazione applicata ai dati reali.
 
-**Compatibilita statica:** 22 file applicativi analizzati con grammatica Python 3.8 e compilati. Non equivale a esecuzione su Python 3.8/iOS. Alla verifica locale non erano stati eseguiti nuovi job CI o collaudi nativi Linux/macOS; la CI multipiattaforma verra controllata dopo il push autorizzato.
+**Compatibilita statica:** 22 file applicativi analizzati con grammatica Python 3.8 e compilati. Non equivale a esecuzione su Python 3.8/iOS. Dopo il push autorizzato, verificata anche la CI con Python 3.12 su Windows, Linux e macOS; dettagli nella sezione di integrazione.
 
 **Revisione indipendente:** due passaggi di sola lettura, nessun rilievo critico/importante residuo. Esaminati flussi di modifica, date legacy, preferenze, selettori, aggiornamenti Windows, lock Pythonista e probe nativo. Il revisore non ha modificato file ne ripetuto test.
 
@@ -75,6 +75,15 @@ Integrita ZIP/manifest/SHA-256 e corrispondenza con i sorgenti verificati. Inclu
 Evidenze: `dist/step-02-packages.json`, `dist/step-02-console-smoke.json`, `dist/step-02-package-smoke.json`, `dist/step-02-windows-gui-smoke.json`, `dist/SHA256SUMS.txt`.
 
 Controllo finale senza nuova esecuzione dell'app: i 22 sorgenti coincidono con quelli della suite e con i payload dei tre ZIP, CRC/checksum degli archivi validi, 18 file originari ancora invariati e `main`/`origin/main` alla base. Evidenza: `dist/step-02-final-integrity.json`.
+
+## Integrazione e CI dopo il Go
+
+- L'utente ha autorizzato l'integrazione con «go on» e confermato esplicitamente commit, merge locale e push, senza PR. La checklist nativa non viene considerata confermata voce per voce.
+- Commit `8d93d060425a32e3d06db1f9757e1b0921321e81` creato sul branch; `main` aggiornato con merge fast-forward allo stesso commit e successivamente pubblicato su `origin/main`. Identita dei commit e working tree pulito verificati prima e dopo il push.
+- Dopo il merge, i contenuti di **52 file Python** (app, test e strumenti) sono invariati, confrontando i fine riga normalizzati. Git ha convertito da LF a CRLF soltanto `stuffapp/box_order.py` e `stuffapp/storage.py` fra i 22 sorgenti della suite; nessuna modifica funzionale. Tre ZIP locali e 18 file dati/impostazioni preesistenti ancora identici. Evidenza: `dist/step-02-integration-integrity.json`. Nessuna suite locale o build ripetuta.
+- [CI 38924208559](https://github.com/Quisquisnaut/YetAnotherStuffApp/actions/runs/38924208559), evento push sul commit applicativo, **completata con successo**: Windows **318 passati, 0 fallimenti, 0 skip**; Linux/macOS **316 passati, 0 fallimenti, 2 skip** ciascuno, per controlli specifici Windows (alias dei percorsi e launcher).
+- Build dei tre pacchetti e smoke console superati su tutte le piattaforme. Su Windows superati anche launcher, GUI e tastiera/focus. Tre artefatti caricati; job release correttamente saltato. Risultati letti dai job e dai log, riepilogo locale in `dist/step-02-ci.json`.
+- Chiusura del rapporto e del piano con commit esclusivamente documentale e `[skip ci]`, senza ripetere suite o rigenerare le build collaudate. Step 3 non iniziato.
 
 ## Problemi riscontrati e limiti residui
 
@@ -109,5 +118,5 @@ Copia Windows gia estratta: `dist/YetAnotherStuffApp-0.3.8-windows/YetAnotherStu
 - Step 0/1 e follow-up fino alla 0.3.7 gia integrati; rapporti storici invariati. Le precedenti checklist native non ricevono conferme implicite da questo lavoro.
 - **Go Step 2 ricevuto con «go on»**, seguito da conferma esplicita della sequenza commit, merge locale e push, senza PR. Il Go autorizza l'integrazione; non attribuisce conferme non espresse alle singole voci della checklist visiva, incluso Pythonista/iCloud nativo.
 - Controllo prima del commit: 22 sorgenti identici allo stato della suite, tre ZIP con gli stessi SHA-256 e 18 file dati/impostazioni preesistenti invariati. Suite e build non ripetute.
-- Integrazione in corso: commit sul branch locale, fast-forward di `main` al medesimo commit verificato, controllo identita/stato pulito senza ripetere la suite, poi push. Nessun worktree, PR o release previsto.
+- **Integrazione completata:** commit applicativo `8d93d06`, fast-forward di `main` al medesimo commit e successivo push; CI Windows/Linux/macOS verde. Controlli di identita, integrita e stato pulito eseguiti senza ripetere la suite locale. Nessun worktree, PR, tag o release.
 - Step 3 e successivi non iniziati. I tag, il pannello unico dei filtri e l'ordinamento degli articoli restano separati.
