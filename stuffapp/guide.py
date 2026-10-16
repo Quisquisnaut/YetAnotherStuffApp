@@ -16,43 +16,58 @@ ABOUT_TEXT = "\n\n".join([
 
 DATA_FOLDER_HELP = """Choose a location, then decide what to do with its inventory.
 
-Browse for an inventory folder... opens the iOS Files picker. Select the
+Pythonista, the Windows GUI and console use the same choices. Select the
 data folder itself; StuffData is not appended. Then choose:
 
 - Open this folder: use the inventory already there. An empty folder
   starts an empty inventory. Your previous folder stays where it is.
-- Copy current inventory here: copy the COMPLETE current data folder,
+- Copy complete folder here: copy the COMPLETE current data folder,
   including photos, item types, backups, trash, exports and extra files.
-  The destination must already exist, be completely empty, and be separate
+  The destination must be completely empty and separate
   from the source. After copying and verification, the app uses the copy.
   The original folder is kept. Links and special files are refused.
 - Cancel: continue using your current inventory.
 
-Enter an inventory folder path... is an alternative way to OPEN a folder:
-paste its full path. It does not copy anything. Pythonista must already
-have access; use Browse or External Files > Open... > Folder... first.
+Browse for an inventory folder... opens the native folder picker on
+Pythonista or Windows. Console offers a text browser: Use this folder
+selects the displayed folder; Parent folder goes up; a folder name opens
+that directory; 0 cancels. Use path entry for another drive or an unavailable
+starting location.
 
-Use this app's StuffData folder opens StuffData next to this app. If this
-project is in iCloud Drive, its label says Use app folder (iCloud Drive).
-Use Pythonista's iCloud folder opens StuffData in Pythonista's dedicated
-iCloud folder. These shortcuts may offer the older INVENTORY-ONLY copy:
-boxes, items, photos and item types; backups, trash and exports are excluded.
-For a complete relocation, use Browse and Copy current inventory here.
+Enter an inventory folder path... accepts an existing folder's full path.
+Use default folder (StuffData) selects StuffData next to this app, including
+when the app is in iCloud Drive. Pythonista also offers Use Pythonista's
+iCloud folder for its separate dedicated iCloud location when available.
+Every selector offers the same Open / Copy complete folder / Cancel choices.
+Only fixed-location shortcuts can create their missing folder, after you
+confirm. Browse and path entry require an existing folder. Pythonista must
+already have access to a typed path: use Browse or authorize the folder in
+External Files > Open... > Folder... first.
+
+All Settings copy actions are COMPLETE folder copies; there is no partial
+inventory-only copy option. Ordinary backup ZIPs are partial: they include
+boxes, items, photos and types, but exclude trash, exports and extra files.
+Reset current data folder saves such a backup first; existing backups are
+kept. Keep an independent complete copy before resetting if you need those
+excluded files.
 
 TO RELOCATE YOUR COMPLETE INVENTORY
 1. Make an independent copy of the current data folder for backup.
-2. Create a separate, completely empty destination folder in Files.
-3. In Settings, tap Browse for an inventory folder... and select it.
-4. Choose Copy current inventory here and confirm the source/destination.
+2. Create a separate, completely empty destination folder in Files or your
+   computer's file manager (a missing default folder is created on confirmation).
+3. In Settings, select it using Browse, path entry or a fixed shortcut.
+4. Choose Copy complete folder here and confirm the source/destination.
    Wait for the completion message. Do not edit either folder meanwhile.
-5. Check boxes, items, photos and the new path, then restart Pythonista
+5. Check boxes, items, photos and the new path, then restart the app
    and check again. Keep the original until you have verified the copy.
 
 Copy never merges inventories or deletes the original. If copying fails,
 the current location stays selected. Files created by this operation are
-cleaned up where possible; inspect the destination before retrying if
+cleaned up where possible; a PARTIAL COPY may remain if
 permissions changed or another app wrote there. A verified copy is kept
 if opening it or saving its location fails; the error tells you where it is.
+Inspect the destination before retrying. Allow space for both a temporary
+copy and the final copy; the app never deletes the original for you.
 Ordinary startup checks, repairs, backups and trash expiry still apply when
 the new inventory is opened. Cloud synchronization is managed separately;
 do not edit the same inventory simultaneously on different devices."""
@@ -304,36 +319,34 @@ types.json), trash/, backups/ and exports/.
 Settings lets you choose another data folder, for example in iCloud Drive
 (on iPhone with Pythonista) or a synced folder on a computer.
 
-In Pythonista, Settings > Browse for an inventory folder... opens the iOS
-folder picker. Select the data folder itself: StuffData is not appended.
-Choose Open this folder to use its existing inventory (empty if the folder
-is empty), Copy current inventory here to make and use a complete verified
-copy in an empty separate folder, or Cancel to keep the current location.
-Copies include backups, trash and exports; the original folder is kept.
+Settings > Browse for an inventory folder... opens a native picker in
+Pythonista/Windows GUI or a text folder browser in console. Select the data
+folder itself: StuffData is not appended. Browse, Enter an inventory folder
+path..., Use default folder (StuffData) and Pythonista's iCloud shortcut all
+offer Open this folder / Copy complete folder here / Cancel.
+Copies include all files, backups, trash and exports; the original is kept.
+Copy requires a completely empty destination, separate from the source,
+and is verified before the app selects it. There is no partial-copy choice
+in Settings. A failed copy may leave partial files: inspect before retrying.
 Settings > How to move your inventory... explains each button and the steps.
-The app remembers the folder and permission for future launches. If access
+Pythonista remembers the folder and permission for future launches. If access
 becomes unavailable, startup offers to choose again; Cancel exits without
 replacing your inventory.
 
 Settings > Enter an inventory folder path... accepts an existing folder's
-full path, prefilled with the current location; it only opens that folder.
-Pasting a path alone does not
+full path. Pasting a path alone does not
 grant iOS access: use the picker first or grant access in Pythonista's file
 browser, External Files > Open... > Folder... . An inaccessible folder leaves
 the current choice active.
 
-The Windows/console folder chooser and Pythonista's fixed-location shortcuts
-retain their older partial copy: boxes, items, photos and item types, without
-backups, trash or exports. Their copy protections are still limited.
-
 In Pythonista, a project opened from Files may already be in iCloud Drive
-(com~apple~CloudDocs). Settings calls this "Use app folder (iCloud Drive)"
-and keeps using StuffData next to that project. The dedicated Pythonista
+(com~apple~CloudDocs). Use default folder (StuffData) keeps using StuffData
+next to that project; its path identifies iCloud Drive. The dedicated Pythonista
 iCloud folder is a separate location and need not be available.
 
-Changing a data folder or accepting a copy can overwrite files. Until the
-data-copy safeguards are completed, use a genuinely empty destination and
-back up both locations independently. Do not merge two inventories by
+Open uses the inventory already in the selected folder; startup checks,
+repairs, backups and trash expiry still apply. Copy refuses any existing
+destination content. Back up both locations independently. Do not merge two inventories by
 copying their files over each other.
 
 An iCloud label recognizes a location; it does not verify synchronization

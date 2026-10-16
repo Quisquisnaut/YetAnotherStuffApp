@@ -14,6 +14,9 @@
 
 ## Avanzamento del lavoro
 
+- Follow-up `0.3.6` approvato con «Unify Both and keep consistent»: gestione cartella unificata Pythonista/Windows GUI/console, etichette Default e Reset richieste, scelta Open / Copy complete folder / Cancel per ogni selettore, nessuna copia parziale da Settings. Branch `feature/unified-data-location`, senza worktree; **258 test passati**, veri dialoghi Tk verificati, 14 file dati/impostazioni invariati, tre ZIP verificati in `dist/`. Regola generale di coerenza salvata in `AGENTS.md`. Nessun commit/merge/push; `main` invariato a `ead832e`. Collaudo visivo e Go in attesa; resto dello Step 1 separato. [UNIFIED_DATA_LOCATION_REPORT](reports/UNIFIED_DATA_LOCATION_REPORT.md).
+- Go `0.3.6` ricevuto con «Go on»: autorizzati commit sul branch, merge nel `main` locale e successivo push, senza worktree o PR. Sorgenti applicativi e tre ZIP ancora identici allo stato verificato; suite locale non ripetuta. Checklist visiva conservata senza attribuire conferme non espresse per le singole voci.
+
 - Baseline `main` `c1094e3` v0.3.0: generati i pacchetti di riferimento Windows/Pythonista. Avvio Pythonista verificato dall’utente dopo la correzione del decoratore `objc_util.on_main_thread`.
 - Step 0, correzione locale iCloud: rilevamento delle cartelle aperte con File sotto `com~apple~CloudDocs`, etichette Settings aggiornate senza spostare i dati, build iOS `0.3.0+ios.2` e test automatici locali.
 - **Verifica visiva su iPhone completata per la correzione iCloud**: iCloud Drive (project folder) selezionato, percorso dei dati invariato, `0.3.0+ios.2` visualizzato in About. **Build Windows 0.3.0 di riferimento confermata funzionante dall’utente.** Non equivale al collaudo di una futura build Windows modificata nello Step 0.

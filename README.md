@@ -285,7 +285,7 @@ values of the type's own fields in `"extra"` (`{"Author": "..."}`).
   all boxes, items, images and item types, and keeps the last 15. You can also make a backup
   yourself, or restore one from the list or from any zip file. Before a restore,
   the current data is saved as a `before-restore` backup.
-  Settings also has **Reset this data folder**: it first saves a backup, then
+  Settings also has **Reset current data folder**: it first saves a backup, then
   clears boxes, items, photos, custom types, trash and exports. Backups are kept
   so the inventory can be restored. **Current backups exclude trash and exports**;
   before resetting, copy the complete data folder with the app closed if you
@@ -296,41 +296,48 @@ Data location settings and Pythonista folder permissions are stored in `stuffapp
 next to `main.py`, separately on each device.
 Don't edit the same data on two devices at the same moment: the last save wins.
 In Pythonista, projects opened from Files under iCloud Drive are recognized as
-**Use app folder (iCloud Drive)**, preserving `StuffData` next to that project.
+**Use default folder (StuffData)** with its iCloud Drive path, preserving `StuffData` next to that project.
 The dedicated Pythonista iCloud container is a different location. Recognizing
 an iCloud path does not move data or verify that Windows sees the same inventory;
 automatic bidirectional synchronization with conflict resolution is not provided.
 
-Pythonista has **Settings > Browse for an inventory folder...**, which opens
-the native iOS folder picker. Select the data folder itself; `StuffData` is not
-appended. Then choose **Open this folder**, **Copy current inventory here**, or
+All three interfaces have **Settings > Browse for an inventory folder...**:
+the native folder picker in Pythonista/Windows GUI, or a text folder browser
+in console. Select the data folder itself; `StuffData` is not
+appended. Then choose **Open this folder**, **Copy complete folder here**, or
 **Cancel**. Opening uses the inventory already there, or starts an empty one
 if the folder is empty. Copying requires an existing, completely empty folder
 outside the source; it copies **all files**, including backups, trash and
 exports, verifies the contents and then uses the copy. The original is kept.
-The app remembers the chosen folder and its access permission for later
-launches. If permission becomes unavailable, startup offers to choose the
+Pythonista remembers the chosen folder and its access permission for later
+launches. If its permission becomes unavailable, startup offers to choose the
 folder again; Cancel exits without changing the saved choice or creating an
 empty replacement inventory.
 
-**Enter an inventory folder path...** only opens a folder by its full path,
-prefilled with the current location. **Use this app's StuffData folder** and
-**Use Pythonista's iCloud folder** are fixed-location shortcuts; their optional
-older copy includes boxes, items, photos and types, excluding backups, trash
-and exports. Their existing copy limitations remain. For a complete relocation,
-use Browse and choose Copy. **How to move your inventory...** opens the shared
+**Enter an inventory folder path...** selects an existing folder by its full path.
+**Use default folder (StuffData)** and **Use Pythonista's iCloud folder** are
+fixed-location shortcuts. Every selector offers the same Open / Copy complete
+folder / Cancel actions. A missing fixed-location folder is created only after
+confirmation; Browse and manual entry require an existing folder. **All Settings
+copies are complete folder copies**, including extra files. Ordinary backup ZIPs
+are partial: they exclude trash, exports and extra files. **How to move your inventory...** opens the shared
 guide with button explanations and relocation instructions.
 
 A typed path alone does not grant iOS access: use the picker first or authorize
 the external folder in Pythonista's **External Files > Open... > Folder...**.
-Invalid/inaccessible paths and cancellation keep the previous choice.
+Invalid/inaccessible paths and cancellation keep the previous choice. Console's
+browser offers Use this folder, Parent folder and directory names; 0 cancels.
+Use manual entry to select another drive or recover from an unavailable location.
+On copy failure, a partial copy may remain at the destination; the error gives
+its path. Inspect it before retrying. If verification succeeded but activation
+failed, keep the verified copy and original until the error is resolved.
 The Pythonista package includes `PYTHONISTA-SETUP.txt` with these procedures.
 Keep separate app/settings copies per device: absolute paths differ between
 iOS and Windows even when the inventory is shared through a cloud folder.
 
 Data location precedence: `--data`, then `STUFFAPP_DATA`, then Settings, then
 `StuffData` next to `main.py`. Before accepting a data copy, back up both locations
-and use a genuinely empty destination. Existing copy safeguards are limited;
+and use a completely empty, separate destination. Copy never merges inventories;
 do not copy over a partly populated inventory.
 
 ## Tests

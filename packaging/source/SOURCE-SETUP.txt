@@ -16,3 +16,17 @@ By default StuffData is next to main.py. --data overrides STUFFAPP_DATA,
 which overrides the location saved in Settings. Keep independent backups
 before changing a data location or updating. This package contains no data.
 BUILD-INFO.json records the version, Step 00, base commit and file hashes.
+
+Settings has Browse for an inventory folder..., Enter an inventory folder
+path..., Use default folder (StuffData), How to move your inventory... and
+Reset current data folder, consistent with Windows GUI and Pythonista.
+Console Browse uses text menus: Use this folder, Parent folder, subfolders;
+0 cancels. Use path entry for another drive or unavailable starting folder.
+Every selector offers Open this folder / Copy complete folder here / Cancel.
+Copy includes ALL files (also backups, trash, exports and extra files),
+requires a completely empty separate destination, verifies contents, then
+selects the copy. The original is kept. Missing default folders are created
+only after confirmation; Browse and path entry require existing folders.
+On failure inspect the reported destination for a possible partial copy.
+A verified copy is kept if activation fails. Ordinary backup ZIPs are partial:
+they exclude trash, exports and extra files. Read the shared in-app guide.

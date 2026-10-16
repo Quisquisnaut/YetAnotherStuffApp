@@ -84,7 +84,7 @@ class PythonistaSettingsTests(unittest.TestCase):
             sentinel.write_bytes(b'{"existing":true}')
             _, sections = self.sections(project, data)
             rows = sections["Data location"]
-            self.assertEqual(rows[0]["title"], "Use app folder (iCloud Drive)")
+            self.assertEqual(rows[0]["title"], "Use default folder (StuffData)")
             self.assertEqual(rows[0]["accessory"], "checkmark")
             self.assertEqual(len(rows), 4)  # Active location, picker, path entry, and help.
             self.assertEqual(sections["Current folder"][0]["title"], str(data))
@@ -111,7 +111,7 @@ class PythonistaSettingsTests(unittest.TestCase):
     def test_local_folder_is_not_reported_as_icloud_unavailable(self):
         with tempfile.TemporaryDirectory() as folder:
             _, sections = self.sections(folder, Path(folder) / "StuffData")
-            self.assertEqual(sections["Data location"][0]["title"], "Use this app's StuffData folder")
+            self.assertEqual(sections["Data location"][0]["title"], "Use default folder (StuffData)")
             self.assertEqual(sections["Data location"][1]["title"], "Pythonista iCloud folder not detected")
 
 
@@ -159,7 +159,7 @@ class CustomDataFolderTests(unittest.TestCase):
         return {str(path.relative_to(folder)): path.read_bytes()
                 for path in Path(folder).rglob("*") if path.is_file()}
 
-    def choose_path(self, value=None, accepted=True, cancelled=False):
+    def choose_path(self, value=None, accepted=True, cancelled=False, action=0):
         row = next((row for row in self.sections["Data location"]
                     if row["title"] in ("Set data folder path...", "Enter an inventory folder path...")), None)
         self.assertIsNotNone(row, "Settings has no action for a custom data folder")
@@ -171,7 +171,8 @@ class CustomDataFolderTests(unittest.TestCase):
 
         with patch.object(self.touch, "ask_text", return_value=value,
                           side_effect=KeyboardInterrupt if cancelled else None), \
-                patch.object(self.touch, "confirm", side_effect=confirm):
+                patch.object(self.touch, "confirm", side_effect=confirm), \
+                patch.object(self.touch, "choose", return_value=action):
             row["on_tap"]()
 
     def assert_original_active(self):
@@ -424,19 +425,53 @@ class CustomDataFolderTests(unittest.TestCase):
         self.assertEqual(default_data_dir(), str(folder))
         self.assertFalse((folder / "StuffData").exists())
 
-    def test_existing_location_shortcut_still_offers_an_explicit_data_copy(self):
+    def test_location_shortcut_copies_complete_folder_with_the_same_action_choices(self):
         empty = self.base / "Shortcut destination"
-        confirmations = []
-
-        def confirm(*args):
-            confirmations.append(args[0])
-            return True
-
-        with patch.object(self.touch, "confirm", side_effect=confirm):
+        extra = Path(self.source.root) / "exports" / "keep.md"
+        extra.write_bytes(b"complete copy")
+        self.old_source = self.inventory_files(self.source.root)
+        with patch.object(self.touch, "confirm", return_value=True), \
+                patch.object(self.touch, "choose", return_value=1):
             self.screen.on_location(str(empty), True)
-        self.assertEqual(confirmations, ["Change data location?", "Copy data?"])
+        self.assertEqual(self.app.store.root, str(empty))
+        self.assertEqual((empty / "exports" / "keep.md").read_bytes(), b"complete copy")
         self.assertEqual([box["label"] for box in self.app.store.list_boxes()], ["Original inventory"])
         self.assertEqual(self.inventory_files(self.source.root), self.old_source)
+
+    def test_manual_path_can_copy_complete_inventory_instead_of_opening_it(self):
+        empty = self.base / "Path copy"
+        empty.mkdir()
+        extra = Path(self.source.root) / "exports" / "keep.md"
+        extra.write_bytes(b"complete copy")
+        self.old_source = self.inventory_files(self.source.root)
+        self.choose_path(str(empty), action=1)
+        self.assertEqual(self.app.store.root, str(empty))
+        self.assertEqual((empty / "exports" / "keep.md").read_bytes(), b"complete copy")
+        self.assertEqual(self.inventory_files(self.source.root), self.old_source)
+
+    def test_shortcut_cancel_never_creates_missing_folder_or_changes_settings(self):
+        empty = self.base / "Missing shortcut" / "StuffData"
+        for action in (None, 2):
+            with self.subTest(action=action), patch.object(self.touch, "choose", return_value=action):
+                self.screen.on_location(str(empty), False)
+                self.assert_original_active()
+                self.assertFalse(empty.exists())
+
+    def test_default_open_clears_custom_path_and_bookmark_without_copying(self):
+        self.choose_folder(self.target.root)
+        with patch.object(self.touch, "choose", return_value=0), \
+                patch.object(self.touch, "confirm", return_value=True):
+            self.screen.on_location(self.source.root, False)
+        self.assertEqual(self.app.store.root, self.source.root)
+        self.assertEqual(config.load_settings(), {"keep_me": "unchanged"})
+        self.assertIsNone(self.touch.ios_folders.current_access())
+
+    def test_manual_copy_cancel_keeps_destination_and_settings_untouched(self):
+        empty = self.base / "Cancelled path copy"
+        empty.mkdir()
+        self.choose_path(str(empty), action=2)
+        self.assert_original_active()
+        self.assertEqual(list(empty.iterdir()), [])
 
     def test_cancelling_input_does_not_change_settings_or_either_inventory(self):
         self.choose_path(cancelled=True)

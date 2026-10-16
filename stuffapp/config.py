@@ -85,7 +85,11 @@ def has_data(folder):
 
 
 def copy_data(source, target):
-    """Copy boxes, items, images and item types from ``source`` to an empty ``target``."""
+    """Legacy PARTIAL copy: boxes, items, images and types, without backups/trash/exports.
+
+    Retained for API compatibility. Settings uses data_location.copy_inventory
+    for complete, verified copies with stricter destination checks instead.
+    """
     if has_data(target):
         raise ValueError("The target folder already contains data.")
     for sub in _DATA_SUBDIRS:

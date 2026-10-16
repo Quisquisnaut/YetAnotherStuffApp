@@ -117,6 +117,20 @@ class ConsoleUI(object):
                 return int(answer) - 1
             self.print(self._style("Please enter a number between 0 and %d." % len(options), "33"))
 
+    def browse_folder(self, folder):
+        """Text equivalent of a folder picker; navigation never creates files."""
+        folder = os.path.abspath(folder)
+        while True:
+            with os.scandir(folder) as entries:
+                children = sorted((entry.name for entry in entries if entry.is_dir()), key=str.casefold)
+            index = self.choose("Browse: %s" % folder,
+                                ["Use this folder", "Parent folder"] + children)
+            if index is None:
+                return None
+            if index == 0:
+                return folder
+            folder = os.path.dirname(folder) if index == 1 else os.path.join(folder, children[index - 2])
+
     def choose_grouped(self, title, groups):
         """Like ``choose`` with headings: ``groups`` is ``[(heading,
         [options])]``; the options are numbered across the groups. Returns

@@ -4,7 +4,7 @@ import os
 import webbrowser
 from pathlib import Path
 
-from . import backup, config, export, guide
+from . import backup, config, data_location, export, guide
 from .app import KIND_CHOICES, KIND_NAMES, TRASH_DAYS, describe_filters, reminder_line, startup
 from .importer import import_item_file, suggested_box, suggested_type
 from .images import to_jpeg_bytes
@@ -772,41 +772,54 @@ class DesktopApp(object):
                                  parent=self.root)
 
     def show_settings(self):
-        actions = ["Choose data folder...", "Use default data folder", "Reset this data folder"]
+        actions = data_location.SETTINGS_ACTIONS
         index = self._choose("Settings — current folder: %s" % self.store.root, actions)
         if index == 0:
-            folder = self.filedialog.askdirectory(parent=self.root, title="Choose data folder")
-            if folder:
-                self._switch_data_dir(folder, remember=True)
+            folder = self.filedialog.askdirectory(parent=self.root, title=data_location.BROWSE,
+                                                   initialdir=self.store.root, mustexist=True)
+            if not folder:
+                return
         elif index == 1:
-            self._switch_data_dir(config.local_data_dir(), remember=False)
-        elif index == 2 and self.messagebox.askyesno(
-                "Reset data", "Delete all boxes, items, photos, custom types, trash and exports? "
-                "A restorable backup will be saved first.", parent=self.root):
+            folder = self._ask("Inventory folder path", "Full path of an existing inventory folder",
+                               self.store.root)
+            if folder is None:
+                return
+        elif index == 2:
+            folder = config.local_data_dir()
+        elif index == 3:
+            self.messagebox.showinfo(data_location.HELP, guide.DATA_FOLDER_HELP, parent=self.root)
+            return
+        elif index == 4 and self.messagebox.askyesno(
+                data_location.RESET, data_location.reset_warning(self.store.root), parent=self.root):
             safety = backup.reset_data(self.store)
             self.store = Store(self.store.root)
             self.filters = {}
             self.refresh()
             self.messagebox.showinfo("Reset data", "Previous data is backed up at:\n%s" % safety,
                                      parent=self.root)
-
-    def _switch_data_dir(self, folder, remember):
-        folder = os.path.abspath(os.path.expanduser(folder))
-        if folder == self.store.root:
             return
-        if not config.has_data(folder) and config.has_data(self.store.root):
-            if self.messagebox.askyesno("Copy data", "The new folder is empty. Copy current data there?",
-                                        parent=self.root):
-                if not os.path.isdir(folder):
-                    os.makedirs(folder)
-                config.copy_data(self.store.root, folder)
-        config.set_data_dir(folder if remember else None)
-        self.store = Store(folder)
+        else:
+            return
+        folder = data_location.selected_folder(folder, allow_create=index == 2)
+        if data_location.same_folder(folder, self.store.root):
+            return
+        operation = data_location.choose_operation(
+            self.store.root, folder, self._choose,
+            lambda title, message, button: self.messagebox.askyesno(title, message, parent=self.root))
+        if operation is not None:
+            self._switch_data_dir(folder, remember=index != 2, copy_complete=operation,
+                                  allow_create=index == 2)
+
+    def _switch_data_dir(self, folder, remember, copy_complete=False, allow_create=False):
+        if data_location.same_folder(folder, self.store.root):
+            return
+        candidate, messages = data_location.prepare_switch(
+            self.store, folder, remember, copy_complete, Store, startup, allow_create)
+        self.store = candidate
         self.filters = {}
-        messages = startup(self.store)
         self.refresh()
-        if messages:
-            self.messagebox.showinfo("Data folder", "\n\n".join(messages), parent=self.root)
+        self.messagebox.showinfo("Data location changed",
+                                 "\n\n".join(["Now using %s" % folder] + messages), parent=self.root)
 
     def show_help(self):
         titles = guide.topic_titles()

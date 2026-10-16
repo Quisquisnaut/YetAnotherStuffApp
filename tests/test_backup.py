@@ -88,7 +88,7 @@ class ConfigTests(TempStoreTestCase):
 
     def test_reset_cancellation_keeps_data(self):
         box = self.store.create_box("Attic")
-        answers = iter(["3", "n"])
+        answers = iter(["5", "n"])
         ui = ConsoleUI(input_func=lambda prompt="": next(answers), print_func=lambda *_: None,
                        docs_dir=self.tmp, opener=None)
         App(self.store, ui).settings()

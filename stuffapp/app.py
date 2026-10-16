@@ -6,7 +6,7 @@ same storage, import, export and backup modules.
 
 import os
 
-from . import backup, config, export, guide
+from . import backup, config, data_location, export, guide
 from .importer import import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
 from .storage import (EXTRA_KINDS, EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_KIND_NAMES, FIELD_LABELS, REMINDER_DAYS,
@@ -799,26 +799,34 @@ class App(object):
     def settings(self):
         current = self.store.root
         index = self.ui.choose("Data folder: %s" % current,
-                               ["Use another folder (e.g. a synced cloud folder)...",
-                                "Use the default folder next to the app",
-                                "Reset this data folder"])
+                               data_location.SETTINGS_ACTIONS)
         if index is None:
             return
-        if index == 2:
-            if not self.ui.confirm(
-                    "Reset ALL data in %s? Boxes, items, photos, custom types, trash and exports will be deleted. "
-                    "A backup will be saved first and kept in the Backups folder." % current):
+        if index == 4:
+            if not self.ui.confirm(data_location.reset_warning(current)):
                 return
             self.reset_data()
             return
+        if index == 3:
+            self.ui.message(guide.DATA_FOLDER_HELP, title=data_location.HELP)
+            return
         if index == 0:
-            folder = self.ui.ask_path("New data folder")
-            if not folder:
-                return
-            folder = os.path.abspath(os.path.expanduser(folder))
+            folder = self.ui.browse_folder(current)
+        elif index == 1:
+            folder = self.ui.ask_path("Full path of an existing inventory folder")
         else:
             folder = config.local_data_dir()
-        self.switch_data_dir(folder, remember=index == 0)
+        if folder is None:
+            return
+        folder = data_location.selected_folder(folder, allow_create=index == 2)
+        if data_location.same_folder(folder, current):
+            return
+        operation = data_location.choose_operation(
+            current, folder, self.ui.choose,
+            lambda title, message, button: self.ui.confirm(title + "\n" + message))
+        if operation is not None:
+            self.switch_data_dir(folder, remember=index != 2, copy_complete=operation,
+                                 allow_create=index == 2)
 
     def reset_data(self):
         from .storage import Store
@@ -831,20 +839,26 @@ class App(object):
         self.ui.message("Data folder reset. Previous boxes, items and types are in backup %s."
                         % os.path.basename(safety))
 
-    def switch_data_dir(self, folder, remember=True):
+    def switch_data_dir(self, folder, remember=True, copy_complete=False, allow_create=False):
+        from . import ios_folders
         from .storage import Store
 
-        if os.path.abspath(folder) == self.store.root:
+        if data_location.same_folder(folder, self.store.root):
             return
-        if not config.has_data(folder) and config.has_data(self.store.root) and \
-                self.ui.confirm("The new folder is empty. Copy your current data there?"):
-            if not os.path.isdir(folder):
-                os.makedirs(folder)
-            config.copy_data(self.store.root, folder)
-        config.set_data_dir(folder if remember else None)
-        self.store = Store(folder)
+        # Console also runs in Pythonista; retain an existing native grant only
+        # when it covers the chosen folder. This imports no native APIs on Windows.
+        access = ios_folders.current_access()
+        metadata = access.metadata(folder) if access is not None and remember else None
+        if metadata is None:
+            access = None
+        candidate, messages = data_location.prepare_switch(
+            self.store, folder, remember, copy_complete, Store, startup, allow_create,
+            pythonista_access=metadata)
+        self.store = candidate
+        ios_folders.activate(access)
         self.ui.skip = hidden_dirs(self.store)
-        for message in startup(self.store):
+        self.filters = {}
+        for message in messages:
             self.ui.message(message, title="Check")
         self.ui.message("Now using %s" % self.store.root)
 

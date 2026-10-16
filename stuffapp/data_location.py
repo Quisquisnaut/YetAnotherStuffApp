@@ -1,10 +1,102 @@
-"""Data-location validation and verified copies without changing app settings."""
+"""Shared data-location choices, safe activation and verified complete copies."""
 
 import hashlib
 import os
 import shutil
 import stat
 import tempfile
+
+from . import config
+
+BROWSE = "Browse for an inventory folder..."
+ENTER_PATH = "Enter an inventory folder path..."
+DEFAULT = "Use default folder (StuffData)"
+HELP = "How to move your inventory..."
+RESET = "Reset current data folder"
+SETTINGS_ACTIONS = [BROWSE, ENTER_PATH, DEFAULT, HELP, RESET]
+FOLDER_ACTIONS = ["Open this folder", "Copy complete folder here", "Cancel"]
+
+
+def reset_warning(folder):
+    return ("All boxes, items, photos, custom types, trash and exports in %s will be deleted. "
+            "A PARTIAL recovery backup is saved first: boxes, items, photos and item types only; "
+            "trash, exports and extra files are excluded from that backup. Existing backups are kept."
+            % folder)
+
+
+def selected_folder(path, allow_create=False):
+    """Validate selection without writing; only fixed shortcuts can create folders."""
+    if allow_create:
+        path = os.path.expanduser(os.fspath(path).strip())
+        if path and "\0" not in path and os.path.isabs(path) and not os.path.lexists(path):
+            return os.path.abspath(path)
+    return existing_folder(path)
+
+
+def same_folder(first, second):
+    if os.path.normcase(os.path.abspath(first)) == os.path.normcase(os.path.abspath(second)):
+        return True
+    try:
+        return os.path.samefile(first, second)
+    except OSError:  # The previous external folder may no longer be available.
+        return False
+
+
+def choose_operation(source, folder, choose, confirm):
+    """Return False (open), True (complete copy), or None (cancel). No writes."""
+    action = choose("Selected folder: %s" % folder, FOLDER_ACTIONS)
+    if action == 0:
+        title, button = "Open this inventory folder?", "Open folder"
+        message = ("%s\n\nOpen the inventory already here. An empty folder starts an empty inventory. "
+                   "Your current data will stay in its original folder. Nothing will be copied or moved."
+                   % folder)
+    elif action == 1:
+        title, button = "Copy and use this folder?", "Copy and use"
+        message = ("From: %s\nTo: %s\n\nCopy the COMPLETE data folder: boxes, items, photos, item types, "
+                   "backups, trash, exports and extra files. This is not a partial inventory-only copy. "
+                   "The destination must be completely empty and separate from the source. "
+                   "Your original folder will be kept. After verification, the app will use the copy. "
+                   "Do not edit either folder until copying finishes. Normal startup checks, "
+                   "backup retention and trash expiry apply when the copy opens." % (source, folder))
+    else:
+        return None
+    return action == 1 if confirm(title, message, button) else None
+
+
+def prepare_switch(store, folder, remember, copy_complete, store_factory, startup,
+                   allow_create=False, pythonista_access=None):
+    """Prepare inventory and persist choice before callers replace their active Store.
+
+    UI/native permission ownership stays with the caller. Copy and activation
+    failures keep the old setting; a verified copy is retained for recovery.
+    """
+    folder = selected_folder(folder, allow_create)
+    config.load_settings(strict=True)  # Preserve unreadable or malformed settings.
+    if copy_complete:
+        _check_separate(store.root, folder)  # Before creating a missing fixed-location destination.
+    if allow_create and not os.path.exists(folder):
+        os.makedirs(folder)
+    if copy_complete:
+        try:
+            copy_inventory(store.root, folder)
+        except OSError as exc:
+            raise OSError("Copy failed at %s. Your original location is still selected. "
+                          "A partial copy may remain at the destination; inspect it before retrying. %s"
+                          % (folder, exc)) from exc
+    else:
+        check_writable(folder)
+    try:
+        candidate = store_factory(folder)
+        messages = startup(candidate)
+        config.set_data_dir(folder if remember else None, strict=True,
+                            pythonista_access=pythonista_access)
+    except Exception as exc:
+        if copy_complete:
+            raise OSError("The copy was verified at %s, but it could not be activated. "
+                          "Your original location is still selected. Keep both folders and "
+                          "open the copy after resolving this error: %s" % (folder, exc)) from exc
+        raise
+    return candidate, messages
 
 
 def existing_folder(path):
@@ -85,6 +177,16 @@ def _remove_created(created):
             pass
 
 
+def _check_separate(source, target):
+    roots = [os.path.normcase(os.path.realpath(path)) for path in (source, target)]
+    try:
+        common = os.path.commonpath(roots)
+    except ValueError:  # Different Windows drives are disjoint.
+        common = None
+    if common in roots:
+        raise ValueError("Choose a separate destination, outside the current data folder.")
+
+
 def copy_inventory(source, target):
     """Copy the complete folder to an existing empty destination, then verify it.
 
@@ -93,13 +195,7 @@ def copy_inventory(source, target):
     This function never selects a data location, edits settings or deletes source.
     """
     source, target = existing_folder(source), existing_folder(target)
-    roots = [os.path.normcase(os.path.realpath(path)) for path in (source, target)]
-    try:
-        common = os.path.commonpath(roots)
-    except ValueError:  # Different Windows drives are disjoint.
-        common = None
-    if common in roots:
-        raise ValueError("Choose a separate destination, outside the current data folder.")
+    _check_separate(source, target)
     with os.scandir(target) as entries:
         if next(entries, None) is not None:
             raise ValueError("Copy requires a completely empty destination folder.")

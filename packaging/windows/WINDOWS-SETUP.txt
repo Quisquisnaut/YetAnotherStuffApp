@@ -44,6 +44,33 @@ YetAnotherStuffApp for Windows - quick setup
    Test new builds in a separate folder with --data pointing to an empty
    test folder. Do not merge inventories by copying over each other.
 
+6. Open or copy a data folder (same actions as Pythonista and console)
+   Tools > Settings offers Browse for an inventory folder..., Enter an
+   inventory folder path..., Use default folder (StuffData), How to move
+   your inventory..., and Reset current data folder. The current path is
+   shown in Settings. Select the data folder itself: StuffData is not appended.
+   Every location selector then offers:
+   - Open this folder: use its existing inventory (empty if empty).
+   - Copy complete folder here: copy ALL files, including photos, types,
+     backups, trash, exports and extra files; verify, then use the copy.
+     Destination must be completely empty and separate from the source.
+     Your original is kept; no inventories are merged or overwritten.
+   - Cancel: keep the current location.
+   A missing default folder is created only after confirmation. Browse and
+   path entry require an existing folder. Console uses a text browser:
+   Use this folder selects the displayed path, Parent folder goes up,
+   directory names open subfolders, and 0 cancels. Use path entry for another
+   drive or an unavailable starting folder.
+   Do not edit either folder while copying. Enough free space is needed for
+   temporary and final copies. Links/special files are refused. A failed copy
+   may leave a partial copy at the reported destination: inspect before retrying.
+   If verification succeeded but activation failed, keep both folders; the
+   error identifies the completed copy. Restart and check your new path,
+   boxes, items and photos before considering removal of the original.
+   Settings never makes a partial inventory-only copy. Ordinary backup ZIPs
+   are partial: they exclude trash, exports and extra files. Reset current
+   data folder saves such a backup first and keeps existing backups.
+
 This ZIP requires Python. It is not a standalone .exe. Test packages are
 not approved releases. BUILD-INFO.json identifies the version, Step 00,
 base commit and SHA-256 file inventory (including uncommitted app changes).
