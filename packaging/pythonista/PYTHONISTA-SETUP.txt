@@ -1,4 +1,4 @@
-YetAnotherStuffApp for Pythonista 3 - test package (Step 00)
+YetAnotherStuffApp for Pythonista 3 - test package (Step 01)
 
 1. Extract the ZIP in Files. Keep main.py and stuffapp in the same project
    folder. Copy/open the entire folder in Pythonista, then run main.py.
@@ -15,10 +15,10 @@ YetAnotherStuffApp for Pythonista 3 - test package (Step 00)
 5. Do not edit the same inventory simultaneously on multiple devices.
    There is no automatic conflict-safe Windows/iCloud synchronization.
 6. Console alternative: run main.py --console. BUILD-INFO.json records the
-   version, Step 00, base commit and SHA-256 inventory of this test package.
+   version, Step 01, base commit and SHA-256 inventory of this test package.
    Native touch rendering and iCloud availability require an iPhone test.
 
-OPEN OR COPY A DATA FOLDER (0.3.6)
+OPEN OR COPY A DATA FOLDER (0.3.7)
 
 7. Open Settings > Browse for an inventory folder... . The native iOS picker
    opens: browse On My iPhone or iCloud Drive and select the existing data
@@ -60,8 +60,20 @@ OPEN OR COPY A DATA FOLDER (0.3.6)
     a missing shortcut folder is created only after confirmation. All Settings
     copies include every file: there is no partial inventory-only copy option.
     Ordinary backup ZIPs are partial: boxes, items, photos and types only;
-    trash, exports and extra files are excluded. Reset current data folder
-    saves one of these backups first and keeps existing backups. Keep a
-    separate complete copy before reset if you need the excluded files.
+    trash, exports and .tmp/.bak files are excluded. Before reset or restore,
+    a verified Full recovery (protected) ZIP includes ALL files and empty
+    folders in boxes/items/images/meta/trash/exports, including damaged JSON
+    and .tmp/.bak files. These recovery ZIPs are never pruned automatically.
+    Existing backups and unrelated files remain in place. Restoring an ordinary
+    ZIP keeps current trash/exports; a full recovery ZIP replaces all six folders.
     How to move your inventory... opens the shared guide. Windows GUI and
     console have the same actions; console uses a text folder browser.
+
+12. If reset/restore is interrupted, recovery runs before the inventory opens
+    next time. If recovery is blocked, keep the folder and protected ZIPs;
+    restore permissions/free space and retry. Do not delete journals/staging
+    to bypass the check. You can keep the original untouched and restore its
+    recovery ZIP into a separate empty inventory in another app copy.
+    Close the app on other devices during these operations. Full recovery
+    verifies raw file bytes, not record health or iCloud synchronization.
+    Read Help > Trash, backups and recovery for archive limits and details.

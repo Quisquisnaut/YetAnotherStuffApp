@@ -7,7 +7,6 @@ synced folder (iCloud Drive, OneDrive, Dropbox, ...).
 
 import json
 import os
-import shutil
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SETTINGS_FILE = os.path.join(APP_DIR, "stuffapp_settings.json")
@@ -87,19 +86,11 @@ def has_data(folder):
 def copy_data(source, target):
     """Legacy PARTIAL copy: boxes, items, images and types, without backups/trash/exports.
 
-    Retained for API compatibility. Settings uses data_location.copy_inventory
-    for complete, verified copies with stricter destination checks instead.
+    Retained for API compatibility, with the same verified staging and empty
+    destination protection as complete Settings copies. No merge/overwrite.
     """
-    if has_data(target):
-        raise ValueError("The target folder already contains data.")
-    for sub in _DATA_SUBDIRS:
-        src = os.path.join(source, sub)
-        dst = os.path.join(target, sub)
-        if not os.path.isdir(src):
-            continue
-        if os.path.isdir(dst):
-            shutil.rmtree(dst)
-        shutil.copytree(src, dst)
+    from .data_location import copy_inventory
+    copy_inventory(source, target, subdirs=_DATA_SUBDIRS, create_target=True)
 
 
 def set_data_dir(folder, settings_path=None, strict=False, pythonista_access=None):

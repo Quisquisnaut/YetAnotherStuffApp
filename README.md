@@ -67,7 +67,7 @@ python tools/smoke_release.py dist/*.zip --report dist/console-smoke.json
 ```
 
 `--platform windows` is the default. Every ZIP contains `main.py`, `stuffapp/`,
-README, platform instructions and `BUILD-INFO.json` with version, Step 00, base
+README, platform instructions and `BUILD-INFO.json` with version, Step 01, base
 commit and an exact SHA-256 inventory of the packaged working tree. Tests, user
 data, backups, settings, caches and temporary files are excluded.
 
@@ -281,16 +281,36 @@ values of the type's own fields in `"extra"` (`{"Author": "..."}`).
   box is missing into an "Unsorted" box.
 * **Trash**: deleted items (with their photos) and boxes stay in `trash/` for
   30 days. If an item's box is gone, you choose a new box when you restore it.
-* **Backups**: once a day, if something changed, the app makes a zip backup of
-  all boxes, items, images and item types, and keeps the last 15. You can also make a backup
-  yourself, or restore one from the list or from any zip file. Before a restore,
-  the current data is saved as a `before-restore` backup.
-  Settings also has **Reset current data folder**: it first saves a backup, then
-  clears boxes, items, photos, custom types, trash and exports. Backups are kept
-  so the inventory can be restored. **Current backups exclude trash and exports**;
-  before resetting, copy the complete data folder with the app closed if you
-  need those files. Further copy/reset safeguards belong to the next plan step.
+* **Backups**: ordinary automatic/manual ZIPs are labelled **Inventory only (partial)**.
+  They include boxes, items, images and types, excluding trash, exports and `.tmp`/`.bak`
+  recovery files; the last 15 ordinary backups are kept.
+  **Before every reset or restore**, a verified **Full recovery (protected)** ZIP
+  saves all files and empty folders in `boxes/`, `items/`, `images/`, `meta/`,
+  `trash/` and `exports/`, including damaged files and temporary recovery copies.
+  These safety ZIPs use `stuff-recovery-` and are protected from automatic pruning.
+  **Reset current data folder** clears only those six managed folders after
+  verification. Existing backups and unrelated root files remain in place.
+  Restoring a full recovery ZIP replaces all six folders, including trash and
+  exports; restoring an ordinary/legacy ZIP keeps current trash and exports.
+  Each restore first protects the current state with a full recovery snapshot.
+  Older ZIPs remain readable; use the updated app to restore new full recovery ZIPs.
   For more safety, copy `backups/` to another device now and then.
+
+Reset/restore swaps are journaled. After process termination, recovery runs before
+the app creates folders or checks inventory records. If recovery cannot finish,
+the app stops opening that inventory and keeps its recovery files. Restore access
+or free space and retry; do not delete journals/staging to bypass the check. You
+can instead keep the original untouched and restore its protected ZIP into a
+separate empty inventory. Close other apps/devices during these operations.
+This does not provide hardware power-loss guarantees or cloud conflict resolution.
+
+ZIP validation checks portable paths, member counts/sizes, CRC and new-format
+SHA-256 manifests. Limits: 200,000 entries, 8 GiB uncompressed data including
+metadata, 32 MiB manifest and 5 MiB ordinary JSON records. Full recovery preserves
+raw damaged JSON bytes under the total-size limit; ordinary health checks and
+trash expiry still apply after restoration. Links, devices, encrypted ZIPs,
+duplicate/case aliases and unsafe filenames are refused. Backups do not recursively
+contain `backups/`, unrelated root files or device settings next to the app.
 
 Data location settings and Pythonista folder permissions are stored in `stuffapp_settings.json`
 next to `main.py`, separately on each device.

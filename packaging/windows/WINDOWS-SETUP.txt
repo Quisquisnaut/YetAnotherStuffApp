@@ -68,11 +68,21 @@ YetAnotherStuffApp for Windows - quick setup
    error identifies the completed copy. Restart and check your new path,
    boxes, items and photos before considering removal of the original.
    Settings never makes a partial inventory-only copy. Ordinary backup ZIPs
-   are partial: they exclude trash, exports and extra files. Reset current
-   data folder saves such a backup first and keeps existing backups.
+   are partial: they exclude trash, exports and .tmp/.bak files; latest 15 kept.
+   Before every reset/restore, a verified Full recovery (protected) ZIP saves
+   all files/empty folders in boxes/items/images/meta/trash/exports. Protected
+   ZIPs are never automatically pruned. Existing backups and unrelated files
+   remain in place. Ordinary ZIP restores keep trash/exports; full recovery
+   restores replace all six folders. Older ZIPs remain readable.
+   After an interrupted reset/restore, recovery runs before opening data.
+   If blocked, keep all recovery files, restore permissions/free space and
+   retry. Never delete journals/staging to bypass the check. If necessary,
+   keep the original untouched and restore its protected ZIP into a separate
+   empty inventory. Keep other devices/apps closed during these operations.
+   Help > Trash, backups and recovery explains archive limits and scope.
 
 This ZIP requires Python. It is not a standalone .exe. Test packages are
-not approved releases. BUILD-INFO.json identifies the version, Step 00,
+not approved releases. BUILD-INFO.json identifies the version, Step 01,
 base commit and SHA-256 file inventory (including uncommitted app changes).
 iCloud folder recognition on iPhone does not establish synchronization
 with Windows. Avoid simultaneous edits on multiple devices.

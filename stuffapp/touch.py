@@ -907,7 +907,7 @@ class BackupsScreen(TableScreen):
     def refresh(self):
         rows = [{
             "title": b["date"],
-            "subtitle": "%s  \u00b7  %d KB" % (b["name"].replace(backup.PREFIX, ""), b["size"] // 1024),
+            "subtitle": backup.entry_label(b),
             "on_tap": functools.partial(self.on_backup, b["path"]),
             "accessory": "none",
         } for b in backup.list_backups(self.app.store)]
@@ -919,13 +919,13 @@ class BackupsScreen(TableScreen):
                 {"title": "Restore from a file...", "subtitle": "A backup zip from the Files app",
                  "color": ACCENT, "on_tap": self.on_restore_file, "accessory": "none"},
             ]),
-            ("Backups (newest %d kept, automatic once a day)" % backup.MAX_BACKUPS, rows),
+            (backup.BACKUPS_POLICY, rows),
         ])
 
     @task
     def on_backup_now(self):
         backup.create_backup(self.app.store)
-        hud("Backup saved")
+        info("Backup saved", backup.ORDINARY_NOTICE)
         self.app.refresh_all()
 
     @task
@@ -1315,7 +1315,7 @@ class SettingsScreen(TableScreen):
         self.show([
             ("Data location", rows),
             ("Data", [{"title": data_location.RESET,
-                       "subtitle": "A recovery backup is saved first; existing backups are kept",
+                       "subtitle": "Verified Full recovery backup first; protected from pruning",
                        "color": DANGER, "accessory": "none", "on_tap": self.on_reset_data}]),
             ("Current folder", [{"title": root, "lines": 0, "color": MUTED,
                                  "subtitle": "Located in iCloud Drive (Files)" if in_icloud else ""}]),
@@ -1370,8 +1370,7 @@ class SettingsScreen(TableScreen):
         self.app.store = Store(root)
         self.app.filters = {}
         self.app.refresh_all()
-        info("Data folder reset", "Previous boxes, items and types are in backup %s."
-             % os.path.basename(safety))
+        info("Data folder reset", backup.recovery_saved(safety))
 
 
 # ------------------------------------------------------------- controller
@@ -1542,15 +1541,21 @@ class TouchApp(object):
             self.refresh_all()
 
     def restore(self, path):
-        boxes, items = backup.validate_backup(path)
-        if not confirm("Restore backup?",
-                       "ALL current data is replaced by this backup (%d boxes, %d items). "
-                       "The current data is saved as a backup first." % (boxes, items), "Restore"):
+        if not self._location_lock.acquire(False):
+            raise ValueError("A data-folder change is in progress. Wait for it to finish.")
+        try:
+            return self._restore(path)
+        finally:
+            self._location_lock.release()
+
+    def _restore(self, path):
+        description = backup.describe_backup(path)
+        if not confirm("Restore backup?", backup.restore_warning(description), "Restore"):
             return
-        backup.restore_backup(self.store, path)
+        safety = backup.restore_backup(self.store, path)
         self.store.check()
         self.refresh_all()
-        info("Backup restored", "Your previous data was saved as a backup.")
+        info("Backup restored", backup.recovery_saved(safety))
 
     def switch_data_dir(self, folder, remember, copy_existing=True, folder_access=None, copy_complete=False,
                         allow_create=False):

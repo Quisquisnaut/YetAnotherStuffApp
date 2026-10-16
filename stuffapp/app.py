@@ -771,12 +771,13 @@ class App(object):
         while True:
             backups = backup.list_backups(self.store)
             options = ["Back up now", "Restore from a zip file..."]
-            labels = ["%s  (%d KB)" % (b["name"], b["size"] // 1024) for b in backups]
-            index = self.ui.choose("Backups (in %s)" % self.store.backups_dir, options + labels)
+            labels = [backup.entry_label(entry) for entry in backups]
+            index = self.ui.choose("%s\n%s" % (backup.BACKUPS_POLICY, self.store.backups_dir), options + labels)
             if index is None:
                 return
             if index == 0:
-                self._safe(lambda: self.ui.message("Saved %s" % backup.create_backup(self.store)))
+                self._safe(lambda: self.ui.message("%s\nSaved %s" %
+                                                   (backup.ORDINARY_NOTICE, backup.create_backup(self.store))))
             elif index == 1:
                 self._safe(self.restore_from_file)
             else:
@@ -788,13 +789,12 @@ class App(object):
             self.restore(backup.import_backup_file(self.store, path))
 
     def restore(self, path):
-        boxes, items = backup.validate_backup(path)
-        if not self.ui.confirm("Replace ALL current data with this backup (%d boxes, %d items)? "
-                               "The current data is saved as a backup first." % (boxes, items)):
+        description = backup.describe_backup(path)
+        if not self.ui.confirm(backup.restore_warning(description)):
             return
         safety = backup.restore_backup(self.store, path)
         repaired, problems, rehomed = self.store.check()
-        self.ui.message("Backup restored. Previous data saved as %s" % os.path.basename(safety))
+        self.ui.message("Backup restored.\n" + backup.recovery_saved(safety))
 
     def settings(self):
         current = self.store.root
@@ -836,8 +836,7 @@ class App(object):
         self.store = Store(root)
         self.ui.skip = hidden_dirs(self.store)
         self.filters = {}
-        self.ui.message("Data folder reset. Previous boxes, items and types are in backup %s."
-                        % os.path.basename(safety))
+        self.ui.message("Data folder reset.\n" + backup.recovery_saved(safety))
 
     def switch_data_dir(self, folder, remember=True, copy_complete=False, allow_create=False):
         from . import ios_folders
@@ -910,6 +909,7 @@ def main(argv=None):
                         help="force text menus on every platform (no desktop or touch GUI)")
     args = parser.parse_args(argv)
 
+    from .folder_transaction import RecoveryError
     folder = args.data or default_data_dir()
     access = None
     remember = False
@@ -937,6 +937,11 @@ def main(argv=None):
             store._prepared_startup_messages = messages
         if ios_folders is not None:
             ios_folders.activate(access)
+    except RecoveryError as exc:
+        if access is not None:
+            access.close()
+        print("Inventory recovery needs attention:\n%s" % exc)
+        return 1
     except BaseException:
         if access is not None:
             access.close()

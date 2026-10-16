@@ -47,9 +47,10 @@ External Files > Open... > Folder... first.
 All Settings copy actions are COMPLETE folder copies; there is no partial
 inventory-only copy option. Ordinary backup ZIPs are partial: they include
 boxes, items, photos and types, but exclude trash, exports and extra files.
-Reset current data folder saves such a backup first; existing backups are
-kept. Keep an independent complete copy before resetting if you need those
-excluded files.
+Reset current data folder first saves and verifies a FULL RECOVERY backup:
+all files in boxes, items, images, meta, trash and exports, including .tmp/.bak
+files and empty folders. Full recovery ZIPs are protected from automatic
+pruning. Existing backups and unrelated files remain in place.
 
 TO RELOCATE YOUR COMPLETE INVENTORY
 1. Make an independent copy of the current data folder for backup.
@@ -299,14 +300,51 @@ Recovery tools have limits; keep independent copies of important data:
   box when restoring.
 - Safety copies: every data file keeps a .bak copy of its previous version.
   A damaged file is repaired automatically from it at the next start.
-- Backups: a zip backup of all data is made automatically once a day (when
-  something changed) and the last 15 are kept. You can also make one by hand
-  and restore any backup. Before a restore, the current data is saved as a
-  "before-restore" backup, so a restore can be undone too.
-- Reset data folder (Settings): clears boxes, items, photos, custom types,
-  trash and exports after saving a "before-reset" backup. Existing backups
-  are kept. Current backups exclude trash and exports: copy the entire data
-  folder with the app closed before resetting if you need those files.
+- Ordinary backups: automatic (once a day when changed) or Back up now.
+  These are labelled Inventory only (partial): boxes, items, images and meta
+  (item types), excluding trash, exports and .tmp/.bak recovery files. The
+  latest 15 ordinary backups are kept. Restoring one replaces only those four
+  folders; current trash and exports stay in place.
+- Full recovery backups: saved and verified BEFORE every reset or restore.
+  They include ALL files and empty directories in boxes, items, images, meta,
+  trash and exports, including .tmp/.bak files and damaged JSON. SHA-256 verifies
+  bytes; it does not mean a damaged record is healthy. Counts refer to record
+  files. These ZIPs are labelled Full recovery (protected), use the
+  stuff-recovery- prefix and are never removed by automatic backup pruning.
+  Existing legacy before-reset/before-restore safety ZIPs are also protected,
+  but remain partial if that is what they originally contained.
+- Reset current data folder: clears the six managed folders only AFTER the
+  full recovery ZIP is verified. Existing backups and unrelated files outside
+  those six folders stay in place. Restoring the recovery ZIP replaces all six,
+  recovering trash and exports too; current data gets its own protected snapshot.
+
+Older inventory-only ZIPs remain readable. Backup lists and restore confirmations
+show their scope. New snapshots do not include backups/ recursively, device
+settings next to the app, or unrelated root files; these are not reset.
+Full recovery preserves raw bytes before normal health checks or trash expiry
+on later launches. Damaged records may still need repair from .bak or an older ZIP.
+
+Failures: if backup creation, validation or free space fails, reset/replacement
+does not start. Directory swaps keep a journal. An interrupted process rolls back
+before opening the inventory again; an already committed operation finishes its
+cleanup. If permissions or external changes prevent recovery, opening stops and
+keeps the recovery directories and ZIP. Restore never merges inventories.
+Keep other apps/devices closed during these operations. Process recovery is not
+a guarantee against hardware failure or cloud conflicts.
+
+If recovery cannot finish: keep the complete folder and its backups. Restore
+permissions/free space and relaunch. Do not delete recovery journals or staging
+folders to bypass the check. If necessary, keep that folder untouched, open a
+separate app copy with a new empty inventory and restore its protected recovery
+ZIP from the original backups folder.
+
+Archive limits: 200,000 entries (including directories), 8 GiB total uncompressed
+data including metadata, 32 MiB manifest, and 5 MiB for ordinary JSON records.
+Recovery JSON is preserved as raw data under the total-size limit. Portable
+relative paths are required; links, devices, encrypted archives, duplicate/case
+aliases, path traversal and unsafe Windows names are refused. Keep sufficient
+space for ZIPs and temporary extracted data. Use the updated app for new full
+recovery ZIPs; older app versions do not support their expanded scope.
 
 For extra safety copy the "backups" folder to another device from time to
 time."""),

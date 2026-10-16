@@ -23,6 +23,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOP = "YetAnotherStuffApp"
 WINDOWS_DIR = os.path.join(ROOT, "packaging", "windows")
 PLATFORMS = ("windows", "pythonista", "source")
+DEVELOPMENT_STEP = "01"
 
 
 def version():
@@ -77,7 +78,7 @@ def build(out_dir, platform="windows", kind="test"):
         payload[name] = content
     inventory = {name: hashlib.sha256(content).hexdigest() for name, content in sorted(payload.items())}
     manifest = {
-        "version": version(), "platform": platform, "step": "00", "build_kind": kind,
+        "version": version(), "platform": platform, "step": DEVELOPMENT_STEP, "build_kind": kind,
         "source_commit": source_commit(), "files": inventory,
         "source_tree_sha256": hashlib.sha256(
             json.dumps(inventory, sort_keys=True).encode("utf-8")).hexdigest(),

@@ -18,10 +18,8 @@ FOLDER_ACTIONS = ["Open this folder", "Copy complete folder here", "Cancel"]
 
 
 def reset_warning(folder):
-    return ("All boxes, items, photos, custom types, trash and exports in %s will be deleted. "
-            "A PARTIAL recovery backup is saved first: boxes, items, photos and item types only; "
-            "trash, exports and extra files are excluded from that backup. Existing backups are kept."
-            % folder)
+    from .backup import reset_warning as warning
+    return warning(folder)
 
 
 def selected_folder(path, allow_create=False):
@@ -116,16 +114,22 @@ def check_writable(folder):
         pass
 
 
-def _snapshot(folder, exclude=None):
+def _snapshot(folder, exclude=None, include=None):
     """Inventory names, empty directories and file bytes; refuse links/devices."""
     result = {}
+    selected = {os.path.normcase(name): name for name in include} if include is not None else None
 
     def visit(directory, relative=""):
         with os.scandir(directory) as entries:
             for entry in sorted(entries, key=lambda item: item.name):
                 if not relative and entry.name == exclude:
                     continue
-                name = os.path.join(relative, entry.name)
+                if not relative and selected is not None and os.path.normcase(entry.name) not in selected:
+                    continue
+                component = selected[os.path.normcase(entry.name)] if not relative and selected is not None else entry.name
+                name = os.path.join(relative, component)
+                if name in result:
+                    raise ValueError("Conflicting inventory folder names: %s" % entry.path)
                 details = entry.stat(follow_symlinks=False)
                 if stat.S_ISLNK(details.st_mode) or (
                         getattr(details, "st_file_attributes", 0) & 0x400):  # Windows reparse points.
@@ -187,33 +191,39 @@ def _check_separate(source, target):
         raise ValueError("Choose a separate destination, outside the current data folder.")
 
 
-def copy_inventory(source, target):
+def copy_inventory(source, target, subdirs=None, create_target=False):
     """Copy the complete folder to an existing empty destination, then verify it.
 
     Stage inside the authorized destination: iOS may not grant its parent.
     Keep the selected directory itself in place so its bookmark remains valid.
     This function never selects a data location, edits settings or deletes source.
     """
-    source, target = existing_folder(source), existing_folder(target)
+    source, target = existing_folder(source), selected_folder(target, allow_create=create_target)
+    from .folder_transaction import MARKER
+    if any(os.path.lexists(os.path.join(folder, MARKER)) for folder in (source, target)):
+        raise ValueError("Finish pending inventory recovery before copying this folder.")
     _check_separate(source, target)
+    inventory = _snapshot(source, include=subdirs)
+    if create_target and not os.path.exists(target):
+        os.makedirs(target)
     with os.scandir(target) as entries:
         if next(entries, None) is not None:
             raise ValueError("Copy requires a completely empty destination folder.")
-    inventory = _snapshot(source)
     created = []
     staging = tempfile.mkdtemp(prefix=".stuffapp-copy-", dir=target)
     details = os.lstat(staging)
     stage_created = [(staging, details.st_dev, details.st_ino, True)]
     try:
         _copy_files(source, staging, inventory, stage_created)
-        if _snapshot(staging) != inventory or _snapshot(source) != inventory:
+        if _snapshot(staging) != inventory or _snapshot(source, include=subdirs) != inventory:
             raise OSError("Copy verification failed or source changed. Keep using the original folder.")
         with os.scandir(target) as entries:
             if any(entry.name != os.path.basename(staging) for entry in entries):
                 raise ValueError("Destination changed during copying. Its existing files were kept.")
         try:
             _copy_files(staging, target, inventory, created)
-            if _snapshot(target, exclude=os.path.basename(staging)) != inventory or _snapshot(source) != inventory:
+            if (_snapshot(target, exclude=os.path.basename(staging)) != inventory
+                    or _snapshot(source, include=subdirs) != inventory):
                 raise OSError("Copy verification failed or source changed during copying.")
         except BaseException:
             _remove_created(created)

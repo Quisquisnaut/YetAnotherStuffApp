@@ -1,4 +1,4 @@
-YetAnotherStuffApp - portable source/console test package (Step 00)
+YetAnotherStuffApp - portable source/console test package (Step 01)
 
 Extract the complete ZIP and keep main.py next to stuffapp.
 Requires Python 3. No third-party dependencies are required.
@@ -15,7 +15,7 @@ For iPhone/iPad use the Pythonista package and its dedicated instructions.
 By default StuffData is next to main.py. --data overrides STUFFAPP_DATA,
 which overrides the location saved in Settings. Keep independent backups
 before changing a data location or updating. This package contains no data.
-BUILD-INFO.json records the version, Step 00, base commit and file hashes.
+BUILD-INFO.json records the version, Step 01, base commit and file hashes.
 
 Settings has Browse for an inventory folder..., Enter an inventory folder
 path..., Use default folder (StuffData), How to move your inventory... and
@@ -29,4 +29,12 @@ selects the copy. The original is kept. Missing default folders are created
 only after confirmation; Browse and path entry require existing folders.
 On failure inspect the reported destination for a possible partial copy.
 A verified copy is kept if activation fails. Ordinary backup ZIPs are partial:
-they exclude trash, exports and extra files. Read the shared in-app guide.
+they exclude trash, exports and .tmp/.bak files; latest 15 ordinary ZIPs kept.
+Before reset/restore a verified Full recovery (protected) ZIP saves all files
+and empty folders in boxes/items/images/meta/trash/exports. Protected ZIPs are
+never automatically pruned. Existing backups and unrelated files stay in place.
+Ordinary ZIP restoration keeps current trash/exports; full recovery replaces
+all six folders. Older ZIPs remain readable. Interrupted reset/restore recovers
+before opening the inventory. If blocked, preserve recovery files and restore
+access/free space before retrying; never bypass by deleting journals/staging.
+Read Help > Trash, backups and recovery for scope, limits and safe recovery.

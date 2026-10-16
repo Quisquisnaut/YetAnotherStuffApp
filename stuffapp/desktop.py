@@ -742,14 +742,14 @@ class DesktopApp(object):
     def show_backups(self):
         while True:
             backups = backup.list_backups(self.store)
-            options = ["Back up now", "Restore from zip file..."] + [
-                "%s  (%d KB)" % (entry["name"], entry["size"] // 1024) for entry in backups]
-            index = self._choose("Backups — %s" % self.store.backups_dir, options)
+            options = ["Back up now", "Restore from zip file..."] + [backup.entry_label(entry) for entry in backups]
+            index = self._choose("%s — %s" % (backup.BACKUPS_POLICY, self.store.backups_dir), options)
             if index is None:
                 return
             if index == 0:
                 path = backup.create_backup(self.store, "manual")
-                self.messagebox.showinfo("Backups", "Saved:\n%s" % path, parent=self.root)
+                self.messagebox.showinfo("Backups", "%s\nSaved:\n%s" % (backup.ORDINARY_NOTICE, path),
+                                         parent=self.root)
             elif index == 1:
                 path = self.filedialog.askopenfilename(
                     parent=self.root, title="Choose backup", filetypes=(("Backup files", "*.zip"),))
@@ -760,15 +760,14 @@ class DesktopApp(object):
                 self._restore_backup(backups[index - 2]["path"])
 
     def _restore_backup(self, path):
-        boxes, items = backup.validate_backup(path)
+        description = backup.describe_backup(path)
         if not self.messagebox.askyesno(
-                "Restore backup", "Replace all current data with this backup (%d boxes, %d items)? "
-                "A backup of the current data will be saved first." % (boxes, items), parent=self.root):
+                "Restore backup", backup.restore_warning(description), parent=self.root):
             return
         safety = backup.restore_backup(self.store, path)
         self.store.check()
         self.refresh()
-        self.messagebox.showinfo("Restore backup", "Backup restored. Previous data saved to:\n%s" % safety,
+        self.messagebox.showinfo("Restore backup", "Backup restored.\n" + backup.recovery_saved(safety),
                                  parent=self.root)
 
     def show_settings(self):
@@ -795,7 +794,7 @@ class DesktopApp(object):
             self.store = Store(self.store.root)
             self.filters = {}
             self.refresh()
-            self.messagebox.showinfo("Reset data", "Previous data is backed up at:\n%s" % safety,
+            self.messagebox.showinfo("Reset data", "Data folder reset.\n" + backup.recovery_saved(safety),
                                      parent=self.root)
             return
         else:

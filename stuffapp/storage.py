@@ -558,6 +558,10 @@ def default_data_dir():
 class Store(object):
     def __init__(self, root=None):
         self.root = os.path.abspath(root or default_data_dir())
+        # Finish an interrupted reset/restore before creating missing directories
+        # or running checks that could otherwise alter a half-swapped inventory.
+        from .folder_transaction import recover
+        recover(self.root)
         self.boxes_dir = os.path.join(self.root, "boxes")
         self.items_dir = os.path.join(self.root, "items")
         self.images_dir = os.path.join(self.root, "images")
