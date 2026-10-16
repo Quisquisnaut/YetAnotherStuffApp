@@ -88,6 +88,13 @@ class ConsoleUI(object):
     def _heading(self, title):
         self.print(self._style("== %s ==" % title, "1;36"))
 
+    def show_filter_status(self, state):
+        """Keep the state readable even when terminal colors are unavailable."""
+        code = "1;30;43" if state["scope"] == "boxes" else "1;30;46"
+        self.print("")
+        self.print(self._style(state["title"], code if state["filtered"] else "1;36"))
+        self.print(state["criteria"])
+
     def _ask(self, prompt):
         try:
             return self.input(prompt)
@@ -174,6 +181,50 @@ class ConsoleUI(object):
             else:
                 result[key] = answer
         return result
+
+    def filter_form(self, draft):
+        """One overview; edit only chosen criteria and apply the draft once."""
+        from .filters import FILTER_SCOPE_NOTE, apply_draft
+        from .storage import StorageError
+
+        self.message(FILTER_SCOPE_NOTE)
+        while True:
+            fields = draft.fields()
+            labels = []
+            for field in fields:
+                value = draft.get(field["key"])
+                if field["kind"] == "choice":
+                    value = next((label for choice, label in field["choices"] if choice == value), "Any")
+                elif field["kind"] == "bool":
+                    value = "Yes" if value else "No"
+                elif value is None or value == "":
+                    value = "Any"
+                labels.append("%s: %s" % (field["label"], value))
+            choice = self.choose("Search & filter (draft)", ["Apply", "Clear / Reset filters", "Cancel", "Reverse tag order"] + labels)
+            if choice is None or choice == 2:
+                return None
+            if choice == 0:
+                try:
+                    return apply_draft(draft)
+                except (StorageError, ValueError, OSError) as exc:
+                    self.message(str(exc), "Cannot apply filters")
+            elif choice == 1:
+                draft.clear()
+            elif choice == 3:
+                draft.reverse_tags()
+            else:
+                field = fields[choice - 4]
+                key = field["key"]
+                if field["kind"] == "choice":
+                    index = self.choose(field["label"], [label for _value, label in field["choices"]])
+                    if index is not None:
+                        draft.set(key, field["choices"][index][0])
+                elif field["kind"] == "bool":
+                    draft.set(key, not draft.get(key))
+                else:
+                    current = draft.get(key)
+                    draft.set(key, self.form(field["label"], [(key, field["label"],
+                              "" if current is None else str(current))])[key])
 
     def text(self, title, default=""):
         """Multi-line input. Finish with a line containing only '.'."""

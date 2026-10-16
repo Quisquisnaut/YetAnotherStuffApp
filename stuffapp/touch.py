@@ -23,13 +23,15 @@ import dialogs
 import photos
 import ui
 
-from . import __version__, backup, box_order, config, data_location, export, guide, ios_folders
-from .app import (KIND_CHOICES, KIND_NAMES, TRASH_DAYS, describe_filters, due_text, hidden_dirs, options_text,
+from . import (__version__, backup, box_order, box_tags, config, data_location, export,
+               filter_appearance, guide, ios_folders)
+from .app import (KIND_CHOICES, KIND_NAMES, TRASH_DAYS, due_text, hidden_dirs, options_text,
                   reminder_line, startup)
+from .filters import FILTER_SCOPE_NOTE, FilterDraft, apply_draft, view_status
 from .images import pil_to_jpeg_bytes, to_jpeg_bytes
 from .importer import import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
-from .storage import (EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_LABELS, REMINDER_DAYS, SORT_KEYS, Store, StorageError,
+from .storage import (EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_LABELS, REMINDER_DAYS, Store, StorageError,
                       field_options, is_safe_link)
 from .ui import IMAGE_FILE_EXTS, TEXT_FILE_EXTS, find_files
 
@@ -246,7 +248,8 @@ class RowsSource(object):
 
     ``sections`` is a list of ``(header, rows)``; a row is a dict with
     ``title`` and optional ``subtitle``, ``image``, ``accessory``,
-    ``color`` and ``on_tap`` (called with no arguments).
+    ``color``, ``subtitle_color``, ``background``, ``subtitle_lines`` and
+    ``on_tap`` (called with no arguments).
     """
 
     def __init__(self):
@@ -268,9 +271,12 @@ class RowsSource(object):
         cell.text_label.number_of_lines = data.get("lines", 1)
         if data.get("color"):
             cell.text_label.text_color = data["color"]
+        if data.get("background"):
+            cell.background_color = data["background"]
         if data.get("subtitle"):
             cell.detail_text_label.text = data["subtitle"]
-            cell.detail_text_label.text_color = MUTED
+            cell.detail_text_label.text_color = data.get("subtitle_color", MUTED)
+            cell.detail_text_label.number_of_lines = data.get("subtitle_lines", 1)
         if data.get("image") is not None:
             cell.image_view.image = data["image"]
         default = "disclosure_indicator" if data.get("on_tap") else "none"
@@ -278,6 +284,18 @@ class RowsSource(object):
         if not data.get("on_tap"):
             cell.selectable = False
         return cell
+
+    def tableview_height_for_row(self, tableview, section, row):
+        data = self.sections[section][1][row]
+        if data.get("lines") == 0 or data.get("subtitle_lines") == 0:
+            width = max(120, tableview.width - 56)
+            title_height = text_height(data["title"], width, ("<system>", 17)) if data.get("lines") == 0 else 22
+            subtitle_height = 0
+            if data.get("subtitle"):
+                subtitle_height = (text_height(data["subtitle"], width, ("<system>", 14))
+                                   if data.get("subtitle_lines") == 0 else 18)
+            return max(44, title_height + subtitle_height + 16)
+        return getattr(tableview, "row_height", 44)
 
     def tableview_can_delete(self, tableview, section, row):
         return False
@@ -335,25 +353,61 @@ class HomeScreen(TableScreen):
     def refresh(self):
         store = self.app.store
         items = store.list_items()
-        counts_boxes = box_order.ordered_boxes(store, items=items)
+        values = getattr(self.app, "filters", {})
+        tag = values.get("tag")
+        all_boxes = box_order.ordered_boxes(store, items=items)
+        counts_boxes = box_tags.filter_boxes(all_boxes, tag)
+        box_status = view_status(store, values, "boxes", len(counts_boxes), len(all_boxes))
+        box_colors = filter_appearance.filtered_colors("boxes", DARK) if box_status["filtered"] else None
+        try:
+            found = store.search_items(**values)
+        except StorageError:
+            found = []
+        item_status = view_status(store, values, "items", len(found), len(items))
+        item_colors = filter_appearance.filtered_colors("items", DARK) if item_status["filtered"] else None
         by_box = {}
         for item in items:
             by_box.setdefault(item.get("box"), []).append(item)
         box_rows = []
         for box in counts_boxes:
             in_box = by_box.get(box["id"], [])
+            tags = box_tags.tags_of(box)
             box_rows.append({
                 "title": box["label"],
-                "subtitle": count_text(store, in_box) + ("  \u00b7  " + box["description"] if box.get("description") else ""),
+                "subtitle": count_text(store, in_box) + ("  \u00b7  " + box["description"] if box.get("description") else "")
+                            + ("  \u00b7  Tags: " + ", ".join(tags) if tags else ""),
                 "on_tap": functools.partial(self.app.open_box, box["id"]),
             })
         if not box_rows:
-            box_rows.append({"title": "No boxes yet: tap + to create one", "color": MUTED})
+            box_rows.append({"title": "No boxes match this tag" if tag else "No boxes yet: tap + to create one",
+                             "color": MUTED})
+        box_banner = {"title": box_status["title"], "subtitle": box_status["criteria"],
+                      "lines": 0, "subtitle_lines": 0, "accessory": "none"}
+        box_status_rows = [box_banner]
+        if box_colors:
+            for row in box_rows:
+                row.update(background=box_colors["surface"], color=box_colors["text"],
+                           subtitle_color=box_colors["text"])
+            box_banner.update(background=box_colors["banner"], color=box_colors["text"],
+                              subtitle_color=box_colors["text"])
+            box_status_rows.append({"title": "Clear box tag", "on_tap": self.on_clear_box_tag,
+                                    "accessory": "none", "background": box_colors["banner"],
+                                    "color": box_colors["accent"]})
+        search_row = {"title": "Search & filter", "subtitle": item_status["title"] + "\n" + item_status["criteria"],
+                      "subtitle_lines": 0, "on_tap": self.app.open_search}
+        if item_colors:
+            search_row.update(background=item_colors["banner"], color=item_colors["text"],
+                              subtitle_color=item_colors["text"])
+        search_rows = [search_row]
+        if item_colors:
+            search_rows.append({"title": "Clear filters", "on_tap": self.on_clear_filters,
+                                "accessory": "none", "background": item_colors["banner"],
+                                "color": item_colors["accent"]})
+        tag_label = next((row["label"] for row in box_tags.catalog(store.list_boxes()) if row["key"] == tag), tag)
         due = store.due_reminders()
         overdue = len([r for r in due if r["days"] < 0])
         self.show([
-            ("", [{"title": "Search & filter", "subtitle": count_text(store, items),
-                   "on_tap": self.app.open_search},
+            ("", search_rows + [
                   {"title": "Reminders" + (" (%d)" % len(due) if due else ""),
                    "subtitle": ("%d overdue  \u00b7  " % overdue if overdue else "") + (
                        "next: %s" % reminder_line(due[0]) if due else "nothing due in the next %d days"
@@ -361,7 +415,10 @@ class HomeScreen(TableScreen):
                    "color": DANGER if overdue else None,
                    "on_tap": lambda: self.app.push(RemindersScreen(self.app))}]),
             ("Box order", [{"title": "Sort boxes", "subtitle": box_order.description(),
-                            "on_tap": self.on_sort}]),
+                            "on_tap": self.on_sort},
+                           {"title": "Filter boxes", "subtitle": "Box tag: " + tag_label if tag else "All tags",
+                            "on_tap": lambda: self.app.push(FilterScreen(self.app))}]),
+            ("Box filter status", box_status_rows),
             ("Boxes (%d)" % len(counts_boxes), box_rows),
             ("Add", [
                 {"title": "Create Box", "on_tap": self.app.on_create_box, "accessory": "none", "color": ACCENT},
@@ -390,6 +447,16 @@ class HomeScreen(TableScreen):
         self.app.on_add_menu()
 
     @location_task
+    def on_clear_box_tag(self):
+        self.app.filters = {key: value for key, value in self.app.filters.items() if key != "tag"}
+        self.app.refresh_all()
+
+    @location_task
+    def on_clear_filters(self):
+        self.app.filters = {}
+        self.app.refresh_all()
+
+    @location_task
     def on_sort(self):
         index = choose("Sort boxes", box_order.choice_labels())
         box_order.apply_choice(index)
@@ -416,6 +483,7 @@ class BoxScreen(TableScreen):
         head = []
         if box.get("description"):
             head.append({"title": box["description"], "lines": 0})
+        head.append({"title": "Tags: " + (", ".join(box_tags.tags_of(box)) or "none"), "lines": 0})
         head.append({"title": "ID " + box["id"], "color": MUTED})
         rows = [{
             "title": item["name"],
@@ -426,7 +494,8 @@ class BoxScreen(TableScreen):
         if not rows:
             rows.append({"title": "Empty box: tap + to create an item, or Actions > Add Stuff to Box",
                          "color": MUTED, "lines": 0})
-        self.show([(box["label"], head), ("Items  (%s)" % count_text(store, items), rows)])
+        scope = "Box contents - all %d item%s" % (len(items), "" if len(items) == 1 else "s")
+        self.show([(box["label"], head), (scope + "  (%s)" % count_text(store, items), rows)])
 
     @task
     def on_new_item(self, sender):
@@ -735,6 +804,7 @@ class ItemEditor(Screen):
 class SearchScreen(Screen):
     def __init__(self, app):
         Screen.__init__(self, app, "Search")
+        self._keyboard_height = 0
         self.field = ui.TextField(placeholder="Search name, notes, box...", font=("<system>", 17))
         self.field.clear_button_mode = "while_editing"
         self.field.autocapitalization_type = ui.AUTOCAPITALIZE_NONE
@@ -748,6 +818,15 @@ class SearchScreen(Screen):
         self.filter_button = ui.Button(title="Filters", tint_color=ACCENT)
         self.filter_button.action = lambda s: self.app.push(FilterScreen(self.app))
         self.add_subview(self.filter_button)
+        self.status_banner = ui.ScrollView()
+        self.status_banner.shows_horizontal_scroll_indicator = False
+        self.add_subview(self.status_banner)
+        self.status_label = ui.Label(font=("<system-bold>", 17), number_of_lines=0)
+        self.status_banner.add_subview(self.status_label)
+        self.criteria_label = ui.Label(font=("<system>", 14), number_of_lines=0)
+        self.status_banner.add_subview(self.criteria_label)
+        self.clear_button = ui.Button(title="Clear filters", action=self.on_clear_filters)
+        self.add_subview(self.clear_button)
         self.source = RowsSource()
         self.table = ui.TableView()
         self.table.data_source = self.table.delegate = self.source
@@ -758,22 +837,57 @@ class SearchScreen(Screen):
         self.refresh()
 
     def layout(self):
+        if not hasattr(self, "table"):
+            return
         self.field.frame = (PAD / 2, 8, self.width - PAD - 80, 36)
         self.filter_button.frame = (self.width - 80 - PAD / 2, 8, 80, 36)
-        self.table.frame = (0, 52, self.width, self.height - 52)
+        width = max(120, self.width - 2 * PAD)
+        title_height = max(24, text_height(self.status_label.text, width, ("<system-bold>", 17)))
+        criteria_height = text_height(self.criteria_label.text, width, ("<system>", 14))
+        self.status_label.frame = (PAD, 8, width, title_height)
+        self.criteria_label.frame = (PAD, title_height + 12, width, criteria_height)
+        content_height = title_height + criteria_height + 20
+        clear_height = 0 if self.clear_button.hidden else 40
+        available = max(0, self.height - self._keyboard_height)
+        # Reserve room for result rows when the keyboard reduces the viewport.
+        banner_limit = max(44, min(180, available * 0.35, available - 52 - clear_height - 88))
+        banner_height = min(content_height, banner_limit)
+        self.status_banner.frame = (0, 52, self.width, banner_height)
+        self.status_banner.content_size = (self.width, content_height)
+        y = 52 + banner_height
+        self.clear_button.frame = (0, y, self.width, clear_height)
+        y += clear_height
+        self.table.frame = (0, y, self.width, max(0, self.height - y))
+
+    def keyboard_frame_did_change(self, frame):
+        self._keyboard_height = frame[3]
+        self.table.content_inset = (0, 0, frame[3], 0)
+        self.table.scroll_indicator_insets = (0, 0, frame[3], 0)
+        self.layout()
+
+    def textfield_should_return(self, textfield):
+        textfield.end_editing()
+        return True
 
     def textfield_did_change(self, textfield):
         self.app.filters["text"] = textfield.text
-        self.refresh()
+        self.app.refresh_all()
+
+    def on_clear_filters(self, sender):
+        self.field.end_editing()
+        self.app.filters = {}
+        self.app.refresh_all()
 
     def refresh(self):
         store = self.app.store
         filters = dict(self.app.filters)
+        self.field.text = filters.get("text", "")
         try:
             self.items = store.search_items(**filters)
         except StorageError:
             self.items = []
-        active = len([k for k, v in filters.items() if v and k not in ("text", "sort")])
+        active = len([k for k, v in filters.items()
+                      if v is not None and v != "" and v is not False and k not in ("text", "sort")])
         self.filter_button.title = "Filters (%d)" % active if active else "Filters"
         labels = dict((b["id"], b["label"]) for b in store.list_boxes())
         rows = [{
@@ -784,88 +898,227 @@ class SearchScreen(Screen):
         } for item in self.items]
         if not rows:
             rows.append({"title": "No items found", "color": MUTED})
-        header = "%s  \u00b7  %s" % (count_text(store, self.items), describe_filters(store, filters))
-        self.source.sections = [(header, rows)]
+        status = view_status(store, filters, "items", len(self.items), len(store.list_items()))
+        colors = filter_appearance.filtered_colors("items", DARK) if status["filtered"] else None
+        self.status_label.text = status["title"]
+        self.criteria_label.text = status["criteria"] + "\n" + count_text(store, self.items)
+        self.status_banner.background_color = colors["banner"] if colors else FIELD_BG
+        self.clear_button.background_color = colors["banner"] if colors else FIELD_BG
+        self.status_label.text_color = colors["text"] if colors else TEXT
+        self.criteria_label.text_color = colors["text"] if colors else MUTED
+        self.filter_button.tint_color = colors["accent"] if colors else ACCENT
+        self.clear_button.tint_color = colors["accent"] if colors else ACCENT
+        self.clear_button.hidden = not status["filtered"]
+        self.table.background_color = colors["surface"] if colors else BG
+        if colors:
+            for row in rows:
+                row.update(background=colors["surface"], color=colors["text"], subtitle_color=colors["text"])
+        self.source.sections = [("", rows)]
         self.table.reload()
+        self.layout()
 
     @task
     def on_export(self, sender):
         self.app.export_items(self.items, "Search results")
 
 
-class FilterScreen(TableScreen):
+class FilterScreen(Screen):
+    """One scrollable form; all edits remain local until Apply succeeds."""
     def __init__(self, app):
-        TableScreen.__init__(self, app, "Filters")
+        Screen.__init__(self, app, "Filters")
+        self.draft = FilterDraft(app.store, app.filters)
+        self.controls = {}
+        self.labels = {}
+        self.choice_buttons = {}
+        self.choice_tables = {}
+        self.expanded = None
+        self._fields = []
+        self.scroll = ui.ScrollView(frame=self.bounds, flex="WH")
+        self.scroll.background_color = BG
+        self.add_subview(self.scroll)
+        self.error_label = ui.Label(text="", text_color=DANGER, number_of_lines=0, font=("<system>", 15))
+        self.scroll.add_subview(self.error_label)
+        self.scope_label = ui.Label(text=FILTER_SCOPE_NOTE, text_color=MUTED, number_of_lines=0, font=("<system>", 14))
+        self.scroll.add_subview(self.scope_label)
+        self.reverse_button = ui.Button(title="Reverse", tint_color=ACCENT, action=self.on_reverse)
+        self.scroll.add_subview(self.reverse_button)
+        self.buttons(("Apply", self.on_apply), ("Clear", self.on_clear))
+        self.left_button_items = [ui.ButtonItem(title="Cancel", action=self.on_cancel)]
+        for field in self.draft.fields():
+            key = field["key"]
+            label = ui.Label(text=field["label"], text_color=MUTED, font=("<system>", 14))
+            self.labels[key] = label
+            self.scroll.add_subview(label)
+            if field["kind"] == "choice":
+                button = ui.Button(tint_color=ACCENT, font=("<system>", 16))
+                button.background_color = FIELD_BG
+                button.corner_radius = 6
+                button.action = functools.partial(self.on_toggle_choice, key)
+                self.choice_buttons[key] = button
+                self.scroll.add_subview(button)
+                table = ui.TableView()
+                table.background_color = BG
+                table.scroll_enabled = False  # The outer form owns scrolling.
+                table.row_height = 44
+                table.data_source = table.delegate = RowsSource()
+                table.hidden = True
+                self.choice_tables[key] = table
+                self.scroll.add_subview(table)
+            elif field["kind"] == "bool":
+                control = ui.Switch()
+                control.action = self.on_toggle_images
+                self.controls[key] = control
+                self.scroll.add_subview(control)
+            else:
+                control = ui.TextField(font=("<system>", 17), text_color=TEXT, background_color=FIELD_BG)
+                control.autocapitalization_type = ui.AUTOCAPITALIZE_NONE
+                control.autocorrection_type = False
+                control.clear_button_mode = "while_editing"
+                control.corner_radius = 6
+                control.delegate = self
+                self.controls[key] = control
+                self.scroll.add_subview(control)
         self.refresh()
 
     def refresh(self):
-        f = self.app.filters
-        store = self.app.store
-        box_label = "All boxes"
-        if f.get("box") and store.box_exists(f["box"]):
-            box_label = store.get_box(f["box"])["label"]
-        type_label = "All types"
-        if f.get("type_id") and store.type_exists(f["type_id"]):
-            type_label = store.get_type(f["type_id"])["name"]
+        # refresh_all must never replace an in-progress draft with live state.
+        self._fields = self.draft.fields()
+        for field in self._fields:
+            key = field["key"]
+            value = self.draft.get(key)
+            if field["kind"] == "choice":
+                selected = next((label for actual, label in field["choices"] if actual == value), str(value or ""))
+                self.choice_buttons[key].title = selected + "  \u25be"
+                rows = [{"title": label, "accessory": "checkmark" if actual == value else "none",
+                         "on_tap": functools.partial(self.on_select, key, actual)}
+                        for actual, label in field["choices"]]
+                table = self.choice_tables[key]
+                table.data_source.sections = [("", rows)]
+                table.hidden = self.expanded != key
+                table.reload()
+            elif field["kind"] == "bool":
+                self.controls[key].value = bool(value)
+            else:
+                self.controls[key].text = "" if value is None else str(value)
+        if self.draft.store is not self.app.store:
+            self.error_label.text = "The data folder changed. Cancel and reopen filters."
+        self.layout()
 
-        def row(title, value, handler):
-            return {"title": title, "subtitle": value or "any", "on_tap": handler, "accessory": "none"}
+    def layout(self):
+        if not hasattr(self, "scope_label"):
+            return
+        width = max(self.width, 320) - 2 * PAD
+        y = PAD
+        if self.error_label.text:
+            height = max(44, text_height(self.error_label.text, width, ("<system>", 15)))
+            self.error_label.frame = (PAD, y, width, height)
+            y += height + PAD
+        else:
+            self.error_label.frame = (PAD, y, width, 0)
+        scope_height = max(36, text_height(self.scope_label.text, width, ("<system>", 14)))
+        self.scope_label.frame = (PAD, y, width, scope_height)
+        y += scope_height + PAD
+        for field in self._fields:
+            key = field["key"]
+            if field["kind"] == "bool":
+                self.labels[key].frame = (PAD, y, width - 64, 36)
+                self.controls[key].frame = (PAD + width - 52, y + 2, 52, 32)
+                y += 36 + PAD
+                continue
+            label_width = width - 88 if key == "tag_order" else width
+            self.labels[key].frame = (PAD, y, label_width, 26)
+            if key == "tag_order":
+                self.reverse_button.frame = (PAD + width - 80, y - 4, 80, 34)
+            y += 28
+            control = self.choice_buttons[key] if field["kind"] == "choice" else self.controls[key]
+            control.frame = (PAD, y, width, 40)
+            y += 40
+            if self.expanded == key:
+                height = len(field["choices"]) * 44
+                self.choice_tables[key].frame = (PAD, y, width, height)
+                y += height
+            y += PAD
+        self.scroll.content_size = (width + 2 * PAD, y + PAD)
 
-        self.show([
-            ("Filter", [
-                row("Box", box_label, self.on_box),
-                row("Type", type_label, self.on_type),
-                row("Location contains", f.get("location"), functools.partial(self.on_text, "location", "Location contains")),
-                row("Origin contains", f.get("origin"), functools.partial(self.on_text, "origin", "Origin contains")),
-                row("Minimum price (\u20ac)", f.get("min_price"), functools.partial(self.on_text, "min_price", "Minimum price (\u20ac)")),
-                row("Maximum price (\u20ac)", f.get("max_price"), functools.partial(self.on_text, "max_price", "Maximum price (\u20ac)")),
-                {"title": "Only items with photos", "on_tap": self.on_toggle_images,
-                 "accessory": "checkmark" if f.get("with_images") else "none"},
-            ]),
-            ("Sort", [row("Sort by", f.get("sort") or "name", self.on_sort)]),
-            ("", [{"title": "Clear all filters", "color": DANGER, "on_tap": self.on_clear, "accessory": "none"}]),
-        ])
+    @objc_util.on_main_thread
+    def _capture_values(self):
+        for field in self._fields:
+            if field["kind"] in ("text", "bool"):
+                control = self.controls[field["key"]]
+                self.draft.set(field["key"], control.value if field["kind"] == "bool" else control.text)
+        self._end_editing()
 
-    @task
-    def on_box(self):
-        boxes = box_order.ordered_boxes(self.app.store)
-        index = choose("Filter by box", ["All boxes"] + [b["label"] for b in boxes])
-        if index is not None:
-            self.app.filters["box"] = boxes[index - 1]["id"] if index else None
-            self.app.refresh_all()
+    def _end_editing(self):
+        for field in self._fields:
+            if field["kind"] == "text":
+                self.controls[field["key"]].end_editing()
 
-    @task
-    def on_type(self):
-        types = self.app.store.list_types()
-        index = choose("Filter by type", ["All types"] + [t["name"] for t in types])
-        if index is not None:
-            self.app.filters["type_id"] = types[index - 1]["id"] if index else None
-            self.app.refresh_all()
+    def keyboard_frame_did_change(self, frame):
+        self.scroll.content_inset = (0, 0, frame[3], 0)
+        self.scroll.scroll_indicator_insets = (0, 0, frame[3], 0)
 
-    @task
-    def on_text(self, key, title):
-        value = ask_text(title, "Leave empty for any.", self.app.filters.get(key) or "").strip()
-        if key in ("min_price", "max_price") and value:
-            self.app.store.search_items(**{key: value})  # validates the number
-        self.app.filters[key] = value or None
+    def textfield_did_change(self, textfield):
+        for key, control in self.controls.items():
+            if control is textfield:
+                self.draft.set(key, textfield.text)
+                break
+
+    def textfield_did_begin_editing(self, textfield):
+        self.scroll.content_offset = (0, max(0, textfield.y - PAD))
+
+    def textfield_should_return(self, textfield):
+        textfield.end_editing()
+        return True
+
+    def on_toggle_images(self, sender):
+        self.draft.set("with_images", bool(sender.value))
+
+    def on_toggle_choice(self, key, sender):
+        self._capture_values()
+        self.expanded = None if self.expanded == key else key
+        self.refresh()
+
+    def on_select(self, key, value):
+        self._capture_values()
+        self.draft.set(key, value)
+        self.expanded = None
+        self.refresh()
+
+    def on_reverse(self, sender):
+        self._capture_values()
+        self.draft.reverse_tags()
+        self.refresh()
+
+    def on_clear(self, sender):
+        self._end_editing()
+        self.draft.clear()
+        self.expanded = None
+        self.error_label.text = ""
+        self.refresh()
+
+    def on_cancel(self, sender):
+        self._end_editing()
+        self.app.pop()
+
+    @objc_util.on_main_thread
+    def _show_error(self, message):
+        self.error_label.text = message
+        self.layout()
+        self.scroll.content_offset = (0, 0)
+
+    @location_task
+    def on_apply(self, sender):
+        self._capture_values()
+        try:
+            if self.draft.store is not self.app.store:
+                raise StorageError("The data folder changed. Cancel and reopen filters.")
+            values = apply_draft(self.draft)
+        except (StorageError, OSError, ValueError) as exc:
+            self._show_error(str(exc))
+            return
+        self.app.filters = values
         self.app.refresh_all()
-
-    def on_toggle_images(self):
-        self.app.filters["with_images"] = not self.app.filters.get("with_images")
-        self.app.refresh_all()
-
-    @task
-    def on_sort(self):
-        index = choose("Sort by", list(SORT_KEYS))
-        if index is not None:
-            self.app.filters["sort"] = SORT_KEYS[index]
-            self.app.refresh_all()
-
-    def on_clear(self):
-        text = self.app.filters.get("text", "")
-        self.app.filters.clear()
-        self.app.filters["text"] = text
-        self.app.refresh_all()
+        self.app.pop()
 
 
 class TrashScreen(TableScreen):
@@ -1621,10 +1874,11 @@ class TouchApp(object):
         data = dialogs.form_dialog("Create Box", [
             {"type": "text", "key": "label", "title": "Label", "value": ""},
             {"type": "text", "key": "description", "title": "Description", "value": ""},
+            {"type": "text", "key": "tags", "title": "Tags (comma-separated)", "value": ""},
         ])
         if data is None:
             return
-        box = self.store.create_box(data.get("label"), data.get("description"))
+        box = self.store.create_box(data.get("label"), data.get("description"), tags=data.get("tags"))
         self.refresh_all()
         self.open_box(box["id"])
 
@@ -1741,6 +1995,8 @@ class TouchApp(object):
                 {"type": "text", "key": "label", "title": "Label", "value": box["label"]},
                 {"type": "text", "key": "description", "title": "Description",
                  "value": box.get("description", "")},
+                {"type": "text", "key": "tags", "title": "Tags (comma-separated)",
+                 "value": ", ".join(box_tags.tags_of(box))},
             ])
             if data is not None:
                 store.update_box(box_id, **data)

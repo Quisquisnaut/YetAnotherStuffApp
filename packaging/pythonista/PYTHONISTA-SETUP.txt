@@ -1,4 +1,4 @@
-YetAnotherStuffApp for Pythonista 3 - test package (Step 02)
+YetAnotherStuffApp for Pythonista 3 - test package (Step 03)
 
 1. Extract the ZIP in Files. Keep main.py and stuffapp in the same project
    folder. Copy/open the entire folder in Pythonista, then run main.py.
@@ -15,7 +15,7 @@ YetAnotherStuffApp for Pythonista 3 - test package (Step 02)
 5. Do not edit the same inventory simultaneously on multiple devices.
    There is no automatic conflict-safe Windows/iCloud synchronization.
 6. Console alternative: run main.py --console. BUILD-INFO.json records the
-   version, Step 02, base commit and SHA-256 inventory of this test package.
+   version, Step 03, base commit and SHA-256 inventory of this test package.
    Native touch rendering and iCloud availability require an iPhone test.
 
 OPEN OR COPY A DATA FOLDER (0.3.8)
@@ -91,3 +91,26 @@ Last modified records item/photo edits, deletion, restore and both sides of
 moves; creation dates are preserved. Old unrecorded events cannot be rebuilt.
 Sorting does not change records or exports. See Help > Boxes for details,
 legacy timestamp limits and activity left by an operation that fails.
+
+BOX TAGS AND FILTERS (0.3.10)
+
+Create/Edit Box accepts comma-separated tags (20 per box, 64 characters each).
+Spaces and case-insensitive duplicates are normalized, preserving spelling.
+Home > Filter boxes and Search > Filters open one scrollable form. Text fields,
+photo switch and inline choices are on the same screen. Apply validates the
+draft; Clear resets its fields, and Apply activates that reset. Cancel/Back
+discards edits. A Box tag narrows the home box list and search items, combined
+with the other criteria. All tags clears only tag; All boxes clears only box.
+Tag choices show box counts and offer A-Z/Z-A, most/fewest boxes and reversal.
+Tag order saves on this device on Apply; active filters last for the session.
+
+Home marks filtered boxes in amber and filtered item search in teal. Search
+shows FILTERED, visible/total counts and active criteria, even with no matches.
+The colors follow the current system appearance; sorting alone is neutral.
+Clear filters on Home or Search immediately clears the active search and all
+filter conditions. Clear box tag removes only the tag restriction. The separate
+Box contents screen always shows all items in that box, as its heading states.
+Tags survive restart, backups, trash restore and box/inventory Markdown/PDF
+exports. Standalone item exports retain their existing fields and box label.
+Check scrolling, inline choices, keyboard and Cancel on a real iPhone/iPad;
+desktop boundary tests do not verify native iOS rendering or iCloud permission.

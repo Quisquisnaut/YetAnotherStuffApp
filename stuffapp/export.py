@@ -11,6 +11,12 @@ import shutil
 from datetime import datetime
 
 from .pdf import PDFDocument
+from .box_tags import tags_of
+
+
+def _tags_line(box):
+    tags = tags_of(box)
+    return "Tags: " + ", ".join(tags) if tags else ""
 
 
 def slugify(text, fallback="export"):
@@ -138,6 +144,8 @@ def export_box_markdown(store, box_id, path=None):
     md_dir = os.path.dirname(os.path.abspath(path))
     image_dir = os.path.splitext(path)[0] + "_images"
     parts = ["# Box: %s" % box["label"], "", "ID: %s" % box["id"], ""]
+    if _tags_line(box):
+        parts += [_tags_line(box), ""]
     if box.get("description"):
         parts += [box["description"], ""]
     parts += [_count_line(store, items), ""]
@@ -188,6 +196,8 @@ def export_box_pdf(store, box_id, path=None):
     doc = PDFDocument(title="Box: %s" % box["label"])
     doc.heading("Box: %s" % box["label"], size=22)
     doc.text("ID: %s" % box["id"], size=8)
+    if _tags_line(box):
+        doc.text(_tags_line(box), size=10)
     if box.get("description"):
         doc.text(box["description"])
     doc.text(_count_line(store, items), size=10)
@@ -210,6 +220,8 @@ def export_inventory_markdown(store, items=None, title="Inventory", path=None):
     for box, in_box in groups:
         parts.append("## Box: %s" % box["label"])
         parts.append("")
+        if _tags_line(box):
+            parts += [_tags_line(box), ""]
         if box.get("description"):
             parts += [box["description"], ""]
         parts += [_count_line(store, in_box), ""]
@@ -233,6 +245,8 @@ def export_inventory_pdf(store, items=None, title="Inventory", path=None, images
     for box, in_box in groups:
         doc.new_page()
         doc.heading("Box: %s" % box["label"], size=20)
+        if _tags_line(box):
+            doc.text(_tags_line(box), size=10)
         if box.get("description"):
             doc.text(box["description"])
         doc.text(_count_line(store, in_box), size=10)

@@ -119,7 +119,7 @@ class ScriptedApp(TempStoreTestCase):
         return "\n".join(self.output)
 
     def test_create_box_and_item(self):
-        self.run_app(["3", "Kitchen", "Pots",
+        self.run_app(["3", "Kitchen", "Pots", "",
                       "4", "1", "1"] + ITEM_FORM + ["n", "n", "0"])
         box = self.store.list_boxes()[0]
         item = self.store.list_items()[0]
@@ -185,7 +185,7 @@ class ScriptedApp(TempStoreTestCase):
         box = self.store.create_box("Kitchen")
         self.store.create_item("Pan", box["id"], price=10)
         self.store.create_item("Cup", box["id"], price=2)
-        self.run_app(["2", "1", "pan", "", "", "", "", "", "", "", "", "0", "0"])
+        self.run_app(["2", "1", "5", "pan", "1", "0", "0"])
         self.assertIn("1 item(s)", self.text())
         self.assertIn("€10.00", self.text())
 
@@ -299,7 +299,7 @@ class ScriptedApp(TempStoreTestCase):
         self.assertTrue(self.store.type_exists("book"))
 
     def test_errors_are_reported(self):
-        self.run_app(["3", "", "", "0"])
+        self.run_app(["3", "", "", "", "0"])
         self.assertIn("A box needs a label.", self.output)
 
 

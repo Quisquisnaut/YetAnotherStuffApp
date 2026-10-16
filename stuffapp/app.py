@@ -6,7 +6,8 @@ same storage, import, export and backup modules.
 
 import os
 
-from . import backup, box_order, config, data_location, export, guide
+from . import backup, box_order, box_tags, config, data_location, export, guide
+from .filters import FilterDraft, view_status
 from .importer import import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
 from .storage import (EXTRA_KINDS, EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_KIND_NAMES, FIELD_LABELS, REMINDER_DAYS,
@@ -273,22 +274,35 @@ class App(object):
 
     # --------------------------------------------------------------- boxes
     def create_box(self):
-        data = self.ui.form("Create Box", [("label", "Label", ""), ("description", "Description", "")])
-        box = self.store.create_box(data.get("label"), data.get("description"))
+        data = self.ui.form("Create Box", [("label", "Label", ""), ("description", "Description", ""),
+                                          ("tags", "Tags (comma separated)", "")])
+        box = self.store.create_box(data.get("label"), data.get("description"), tags=data.get("tags"))
         self.ui.message("Box '%s' created." % box["label"])
         return box
 
     def boxes_menu(self):
         while True:
-            boxes = box_order.ordered_boxes(self.store)
+            all_boxes = self.store.list_boxes()
+            boxes = box_order.ordered_boxes(self.store, boxes=box_tags.filter_boxes(
+                all_boxes, self.filters.get("tag")))
+            state = view_status(self.store, self.filters, "boxes", len(boxes), len(all_boxes))
+            self.ui.show_filter_status(state)
             counts = self.store.box_counts()
-            labels = ["%s (%d items)" % (box["label"], counts.get(box["id"], 0)) for box in boxes]
+            labels = ["%s (%d items)%s" % (box["label"], counts.get(box["id"], 0),
+                      "  [" + ", ".join(box_tags.tags_of(box)) + "]" if box_tags.tags_of(box) else "") for box in boxes]
             labels.append("Sort boxes... (%s)" % box_order.description())
+            labels.append("Filter boxes... (%s)" % (self.filters.get("tag") or "All tags"))
+            if state["filtered"]:
+                labels.append("Clear box tag")
             index = self.ui.choose("Boxes", labels)
             if index is None:
                 return
             if index == len(boxes):
                 self._safe(self.sort_boxes)
+            elif index == len(boxes) + 1:
+                self._safe(self.edit_filters)
+            elif index == len(boxes) + 2:
+                self.filters.pop("tag", None)
             else:
                 self.box_menu(boxes[index]["id"])
                 return
@@ -317,7 +331,7 @@ class App(object):
                 return
 
     def box_show_items(self, box_id):
-        item = self.pick_item("Items in box", items=self.store.box_items(box_id), show_box=False)
+        item = self.pick_item("Box contents - all items", items=self.store.box_items(box_id), show_box=False)
         if item:
             self.item_menu(item["id"])
 
@@ -332,7 +346,8 @@ class App(object):
     def edit_box(self, box_id):
         box = self.store.get_box(box_id)
         data = self.ui.form("Edit Box", [("label", "Label", box["label"]),
-                                         ("description", "Description", box.get("description", ""))])
+                                         ("description", "Description", box.get("description", "")),
+                                         ("tags", "Tags (comma separated)", ", ".join(box_tags.tags_of(box)))])
         self.store.update_box(box_id, **data)
 
     def delete_box(self, box_id):
@@ -692,6 +707,8 @@ class App(object):
     def search(self):
         while True:
             items = self.store.search_items(**self.filters)
+            self.ui.show_filter_status(view_status(self.store, self.filters, "items", len(items),
+                                                  len(self.store.list_items())))
             summary = describe_filters(self.store, self.filters)
             options = ["Change search / filters", "Clear filters",
                        "Export results to PDF", "Export results to Markdown"]
@@ -717,28 +734,9 @@ class App(object):
                 self._safe(self.item_menu, items[index - len(options)]["id"])
 
     def edit_filters(self):
-        f = self.filters
-        data = self.ui.form("Search & filter", [
-            ("text", "Search text", f.get("text", "")),
-            ("location", "Location contains", f.get("location", "")),
-            ("origin", "Origin contains", f.get("origin", "")),
-            ("min_price", "Min price (EUR)", f.get("min_price") or ""),
-            ("max_price", "Max price (EUR)", f.get("max_price") or ""),
-            ("with_images", "Only with images (y/n)", "y" if f.get("with_images") else "n"),
-        ])
-        data["with_images"] = data.get("with_images", "").strip().lower() in ("y", "yes")
-        for key in ("min_price", "max_price"):
-            data[key] = data.get(key) or None
-        boxes = box_order.ordered_boxes(self.store)
-        index = self.ui.choose("Filter by box", ["All boxes"] + [b["label"] for b in boxes])
-        data["box"] = boxes[index - 1]["id"] if index else None
-        types = self.store.list_types()
-        index = self.ui.choose("Filter by type", ["All types"] + [t["name"] for t in types])
-        data["type_id"] = types[index - 1]["id"] if index else None
-        sort = self.ui.choose("Sort by", list(SORT_KEYS))
-        data["sort"] = SORT_KEYS[sort or 0]
-        self.store.search_items(**data)  # validate before keeping
-        self.filters = data
+        result = self.ui.filter_form(FilterDraft(self.store, self.filters))
+        if result is not None:
+            self.filters = result
 
     def export_all(self):
         index = self.ui.choose("Export all items", ["PDF", "PDF without images", "Markdown"])
@@ -895,12 +893,16 @@ def describe_filters(store, filters):
             parts.append("type %s" % store.get_type(filters["type_id"])["name"])
         except StorageError:
             pass
+    if filters.get("tag"):
+        identity = box_tags.key(filters["tag"])
+        label = next((row["label"] for row in box_tags.catalog(store.list_boxes()) if row["key"] == identity), filters["tag"])
+        parts.append("tag %s" % label)
     for key, label in (("location", "location"), ("origin", "origin")):
         if filters.get(key):
             parts.append("%s ~ %s" % (label, filters[key]))
-    if filters.get("min_price"):
+    if filters.get("min_price") is not None and filters.get("min_price") != "":
         parts.append(">= %s" % filters["min_price"])
-    if filters.get("max_price"):
+    if filters.get("max_price") is not None and filters.get("max_price") != "":
         parts.append("<= %s" % filters["max_price"])
     if filters.get("with_images"):
         parts.append("with images")

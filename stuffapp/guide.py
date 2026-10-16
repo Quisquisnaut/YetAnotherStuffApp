@@ -114,11 +114,25 @@ items are never confused."""),
 A box is a label for a group of items: a real box, a room, a category,
 anything you like.
 
-- Create Box: give it a label and an optional description.
-- Edit Box: change the label or description.
+- Create Box: give it a label, optional description and optional tags.
+- Edit Box: change the label, description or tags.
 - Delete Box: only possible when the box is EMPTY. Delete its items or move
   them to other boxes first. You are always asked to confirm.
 - Export: a box can be exported to PDF or Markdown with all its items.
+
+Tags belong to boxes, independently of item types. Enter comma-separated labels,
+for example Work, Blue. Spaces are normalized and case-insensitive duplicates
+are removed, keeping the first spelling: Work, work becomes Work. Up to 20 tags
+per box and 64 characters per tag; commas separate labels. Existing boxes without
+tags remain readable without conversion. Tag edits update last modified without
+changing creation. Backups, trash restoration and box/inventory exports keep tags.
+
+Filter boxes: Windows has Filter; Pythonista has Home > Filter boxes; console
+has Boxes > Filter boxes... . Choose a Box tag to narrow the box list and items.
+All tags clears only that condition. Tags can be combined with every box order.
+The tag selector shows the number of boxes per tag and offers A-Z (default),
+Z-A, most/fewest boxes first and Reverse tag order. The choice is saved on this
+device when Apply succeeds. Changing tag order never changes associations.
 
 Sort boxes: Windows has Sort... above the box list (also Box > Sort boxes...);
 Pythonista has Home > Sort boxes; console has Boxes > Sort boxes... .
@@ -309,9 +323,31 @@ Search finds items whose details (name, type, description, serial number,
 brand, issues, the fields of the type...), links or box contain all the
 words you type.
 
-Filters: box, type, location, origin, minimum / maximum price, only items
-with photos. Sort by name, price (highest first), newest, box, type or year
-of acquisition (newest first).
+Filters: search text, box, box tag, type, location, origin, minimum / maximum
+price and only items with photos. Sort by name, price (highest first), newest,
+box, type or year of acquisition (newest first). Free-text matching keeps its
+existing meaning; the box-tag selector matches a whole tag case-insensitively.
+
+Windows and Pythonista show all criteria in one form; Pythonista choices expand
+inline. Console shows one overview so you edit only the criteria you need.
+Apply validates the entire draft before changing results. Clear / Reset filters
+clears the draft (including search text); Apply makes the cleared draft active.
+Cancel, Escape or Back leaves active filters and tag ordering unchanged. Invalid
+input stays in the form for correction. Conditions combine with AND. All boxes
+clears only the specific box; All tags clears only the tag condition. No matches
+is a valid result, including a tag no longer assigned to any box.
+Active filters last for the session; tag assignments and device tag ordering
+survive restart. A changed tag order is saved only after a successful Apply.
+
+Filtered views show FILTERED, the visible/total count and their criteria.
+Box lists use amber and item results use teal; zero matches keep the filtered
+state. Sorting alone keeps the normal appearance. Clear filters outside the
+form immediately clears the active search and all filter conditions, just like
+Search > Clear filters. Clear box tag removes only the tag restriction.
+Box contents in Pythonista and console show all items in that box independently
+of Search filters. Console labels remain available without ANSI colors.
+On Windows, Move opens a destination-box dropdown with Move and Cancel; other
+boxes hidden by a tag filter remain available as destinations.
 
 Export all writes every item (grouped by box) to one PDF or Markdown file.
 The search results can be exported the same way. Exported files are saved

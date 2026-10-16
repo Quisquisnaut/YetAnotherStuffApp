@@ -4,12 +4,13 @@ import os
 import webbrowser
 from pathlib import Path
 
-from . import backup, box_order, config, data_location, export, guide
+from . import backup, box_order, box_tags, config, data_location, export, filter_appearance, guide
 from .app import KIND_CHOICES, KIND_NAMES, TRASH_DAYS, describe_filters, reminder_line, startup
 from .importer import import_item_file, suggested_box, suggested_type
 from .images import to_jpeg_bytes
-from .desktop_dialogs import ask_text, focus_on_open
-from .storage import EXTRA_PREFIX, SORT_KEYS, Store, StorageError, field_options
+from .desktop_dialogs import ask_filters, ask_move_destination, ask_text, focus_on_open
+from .filters import FilterDraft, view_status
+from .storage import EXTRA_PREFIX, Store, StorageError, field_options
 
 
 class DesktopApp(object):
@@ -41,6 +42,8 @@ class DesktopApp(object):
 
         toolbar = ttk.Frame(self.root, padding=8)
         toolbar.grid(row=0, column=0, sticky="ew")
+        actions = ttk.Frame(toolbar)
+        actions.pack(fill="x")
         buttons = (
             ("New box", self.create_box),
             ("New item", self.create_item),
@@ -49,17 +52,22 @@ class DesktopApp(object):
             ("Delete", self.delete_selected),
             ("Import item", self.import_item),
             ("Filter", self.edit_filters),
+            ("Clear filters", self.clear_filters),
             ("Export", self.export_results),
             ("Refresh", self.refresh),
         )
         for text, action in buttons:
-            ttk.Button(toolbar, text=text, command=lambda action=action: self._call(action)).pack(
-                side="left", padx=(0, 6))
-        ttk.Label(toolbar, text="Search").pack(side="left", padx=(12, 4))
+            button = ttk.Button(actions, text=text, command=lambda action=action: self._call(action))
+            button.pack(side="left", padx=(0, 6))
+            if text == "Clear filters":
+                self.clear_filter_button = button
+        searchbar = ttk.Frame(toolbar)
+        searchbar.pack(fill="x", pady=(6, 0))
+        ttk.Label(searchbar, text="Search").pack(side="left", padx=(0, 6))
         self.query = self.tk.StringVar()
-        search = ttk.Entry(toolbar, textvariable=self.query, width=28)
-        search.pack(side="left")
-        self.query.trace_add("write", lambda *_: self.refresh_items())
+        search = ttk.Entry(searchbar, textvariable=self.query, width=40)
+        search.pack(side="left", fill="x", expand=True)
+        self.query.trace_add("write", self._query_changed)
 
         panes = ttk.Panedwindow(self.root, orient="horizontal")
         panes.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
@@ -69,15 +77,18 @@ class DesktopApp(object):
         panes.add(right, weight=4)
         left.rowconfigure(2, weight=1)
         left.columnconfigure(0, weight=1)
+        self.filter_style = ttk.Style(self.root)
+        self.filter_banners = {}
+        self._build_filter_banner(left, "boxes")
+        self._build_filter_banner(right, "items")
         box_header = ttk.Frame(left)
-        box_header.grid(row=0, column=0, columnspan=2, sticky="ew")
-        ttk.Label(box_header, text="Boxes").pack(side="left")
+        box_header.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 4))
+        self.box_order_label = ttk.Label(box_header, text=box_order.description(), wraplength=200)
+        self.box_order_label.pack(side="left", fill="x", expand=True)
         ttk.Button(box_header, text="Sort...", command=lambda: self._call(self.sort_boxes)).pack(side="right")
-        self.box_order_label = ttk.Label(left, text=box_order.description(), wraplength=230)
-        self.box_order_label.grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 4))
         self.box_tree = ttk.Treeview(left, show="tree", selectmode="browse")
         self.box_tree.grid(row=2, column=0, sticky="nsew")
-        self.box_tree.bind("<<TreeviewSelect>>", lambda _event: self.refresh_items())
+        self.box_tree.bind("<<TreeviewSelect>>", self._box_selected)
         box_scroll = ttk.Scrollbar(left, orient="vertical", command=self.box_tree.yview)
         box_scroll.grid(row=2, column=1, sticky="ns")
         self.box_tree.configure(yscrollcommand=box_scroll.set)
@@ -86,8 +97,7 @@ class DesktopApp(object):
         ttk.Button(box_actions, text="Edit box", command=self.edit_box).pack(side="left")
         ttk.Button(box_actions, text="Delete box", command=self.delete_box).pack(side="left", padx=(6, 0))
 
-        right.rowconfigure(0, weight=3)
-        right.rowconfigure(1, weight=2)
+        right.rowconfigure(1, weight=3)
         right.columnconfigure(0, weight=1)
         columns = ("type", "location", "price")
         self.item_tree = ttk.Treeview(right, columns=columns, show="headings", selectmode="browse")
@@ -97,19 +107,81 @@ class DesktopApp(object):
                 self.item_tree["columns"] = ("name",) + columns
             self.item_tree.heading(key, text=title)
             self.item_tree.column(key, width=width, anchor="w")
-        self.item_tree.grid(row=0, column=0, sticky="nsew")
+        self.item_tree.grid(row=1, column=0, sticky="nsew")
         self.item_tree.bind("<<TreeviewSelect>>", self.show_details)
         self.item_tree.bind("<Double-1>", lambda _event: self.edit_selected())
         item_scroll = ttk.Scrollbar(right, orient="vertical", command=self.item_tree.yview)
-        item_scroll.grid(row=0, column=1, sticky="ns")
+        item_scroll.grid(row=1, column=1, sticky="ns")
         self.item_tree.configure(yscrollcommand=item_scroll.set)
-        ttk.Label(right, text="Details").grid(row=1, column=0, sticky="w", pady=(8, 4))
+        ttk.Label(right, text="Details").grid(row=2, column=0, sticky="w", pady=(8, 4))
         self.detail = self.tk.Text(right, height=10, wrap="word", state="disabled")
-        self.detail.grid(row=2, column=0, columnspan=2, sticky="nsew")
-        right.rowconfigure(2, weight=2)
+        self.detail.grid(row=3, column=0, columnspan=2, sticky="nsew")
+        right.rowconfigure(3, weight=2)
+        for scope, tree in (("boxes", self.box_tree), ("items", self.item_tree)):
+            self.filter_banners[scope]["tree"] = tree
+            self.filter_banners[scope]["native_tree_style"] = tree.cget("style")
         self.status = ttk.Label(self.root, anchor="w", padding=(8, 3))
         self.status.grid(row=2, column=0, sticky="ew")
         self.root.rowconfigure(2, weight=0)
+
+    def _build_filter_banner(self, pane, scope):
+        frame = self.ttk.Frame(pane, padding=8)
+        frame.grid(row=0, column=0, columnspan=2, sticky="ew")
+        frame.columnconfigure(0, weight=1)
+        title = self.ttk.Label(frame, wraplength=240 if scope == "boxes" else 600)
+        title.grid(row=0, column=0, sticky="w")
+        criteria = self.ttk.Label(frame, wraplength=240 if scope == "boxes" else 600)
+        criteria.grid(row=1, column=0, sticky="ew", pady=(3, 6))
+        action = self.clear_tag_filter if scope == "boxes" else self.clear_filters
+        clear = self.ttk.Button(frame, text="Clear box tag" if scope == "boxes" else "Clear all filters",
+                                command=lambda: self._call(action))
+        clear.grid(row=2, column=0, sticky="w")
+        self.filter_banners[scope] = {"frame": frame, "title": title, "criteria": criteria,
+                                      "clear": clear, "pane": pane, "native_pane_style": pane.cget("style")}
+
+    def _update_filter_status(self, scope, values, shown, total):
+        state = view_status(self.store, values, scope, shown, total)
+        if not hasattr(self, "filter_states"):
+            self.filter_states = {}
+        self.filter_states[scope] = state
+        if scope == "items" and hasattr(self, "clear_filter_button"):
+            self.clear_filter_button.configure(state="normal" if state["filtered"] else "disabled")
+        banner = getattr(self, "filter_banners", {}).get(scope)
+        if banner is None:
+            return state
+        banner["title"].configure(text=state["title"])
+        banner["criteria"].configure(text=state["criteria"])
+        banner["clear"].configure(state="normal" if state["filtered"] else "disabled")
+        if state["filtered"]:
+            style = self.filter_style
+            background = style.lookup("TFrame", "background") or self.root.cget("background")
+            rgb = self.root.winfo_rgb(background)
+            dark = sum(rgb) / 3 < 32768
+            colors = filter_appearance.filtered_colors(scope, dark)
+            prefix = "Stuff%sFiltered" % scope.title()
+            style.configure(prefix + ".TFrame", background=colors["banner"])
+            style.configure(prefix + ".Surface.TFrame", background=colors["surface"])
+            style.configure(prefix + ".TLabel", background=colors["banner"], foreground=colors["text"])
+            style.configure(prefix + ".Treeview", background=colors["surface"],
+                            fieldbackground=colors["surface"], foreground=colors["text"])
+            base = banner["native_tree_style"] or "Treeview"
+            style.map(prefix + ".Treeview",
+                      background=[("selected", style.lookup(base, "background", ("selected",)) or "#0078d7")],
+                      foreground=[("selected", style.lookup(base, "foreground", ("selected",)) or "#ffffff")])
+            style.configure(prefix + ".Treeview.Heading", background=colors["banner"], foreground=colors["text"])
+            banner["frame"].configure(style=prefix + ".TFrame")
+            banner["pane"].configure(style=prefix + ".Surface.TFrame")
+            for key in ("title", "criteria"):
+                banner[key].configure(style=prefix + ".TLabel")
+            banner["tree"].configure(style=prefix + ".Treeview")
+            banner["tree"].tag_configure("filtered", background=colors["surface"], foreground=colors["text"])
+        else:
+            banner["frame"].configure(style="TFrame")
+            banner["pane"].configure(style=banner["native_pane_style"])
+            for key in ("title", "criteria"):
+                banner[key].configure(style="TLabel")
+            banner["tree"].configure(style=banner["native_tree_style"])
+        return state
 
     def _build_menu(self):
         menu = self.tk.Menu(self.root)
@@ -227,19 +299,46 @@ class DesktopApp(object):
         return boxes[picked - (1 if include_all else 0)]
 
     def refresh(self):
-        selected = self._selected_box()
+        selected = self.filters.get("box")
+        if not selected and not getattr(self, "_updating_filters", False):
+            selected = self._selected_box()
+        if selected and not self.store.box_exists(selected):
+            self.filters.pop("box", None)
+            selected = None
         for row in self.box_tree.get_children():
             self.box_tree.delete(row)
-        self.box_tree.insert("", "end", iid="all", text="All boxes")
         self.box_ids = []
         self.box_order_label.configure(text=box_order.description())
         counts = self.store.box_counts()
-        for box in box_order.ordered_boxes(self.store):
+        all_boxes = self.store.list_boxes()
+        boxes = box_tags.filter_boxes(all_boxes, self.filters.get("tag"))
+        state = self._update_filter_status("boxes", self.filters, len(boxes), len(all_boxes))
+        row_tags = ("filtered",) if state["filtered"] else ()
+        self.box_tree.insert("", "end", iid="all", text="All matching boxes" if state["filtered"] else "All boxes",
+                             tags=row_tags)
+        for box in box_order.ordered_boxes(self.store, boxes=boxes):
             self.box_ids.append(box["id"])
+            tags = box_tags.tags_of(box)
             self.box_tree.insert("", "end", iid="box_%d" % len(self.box_ids),
-                                 text="%s (%d items)" % (box["label"], counts.get(box["id"], 0)))
+                                 text="%s (%d items)%s" % (box["label"], counts.get(box["id"], 0),
+                                      " [" + ", ".join(tags) + "]" if tags else ""), tags=row_tags)
         box_id = next((i + 1 for i, value in enumerate(self.box_ids) if value == selected), 0)
-        self.box_tree.selection_set("box_%d" % box_id if box_id else "all")
+        if box_id or not selected:
+            self.box_tree.selection_set("box_%d" % box_id if box_id else "all")
+        self.refresh_items()
+
+    def _query_changed(self, *_args):
+        if not getattr(self, "_updating_filters", False):
+            self.refresh_items()
+
+    def _box_selected(self, _event=None):
+        if getattr(self, "_updating_filters", False) or not self.box_tree.selection():
+            return
+        selected = self._selected_box()
+        if selected:
+            self.filters["box"] = selected
+        else:
+            self.filters.pop("box", None)
         self.refresh_items()
 
     def sort_boxes(self):
@@ -254,19 +353,18 @@ class DesktopApp(object):
         for row in self.item_tree.get_children():
             self.item_tree.delete(row)
         self.item_ids = []
-        box_id = self._selected_box()
-        filters = dict(self.filters)
-        filters["text"] = self.query.get()
-        if box_id:
-            filters["box"] = box_id
+        filters = self._active_filters()
+        box_id = filters.get("box")
         items = self.store.search_items(**filters)
+        state = self._update_filter_status("items", filters, len(items), len(self.store.list_items()))
         boxes = {box["id"]: box["label"] for box in self.store.list_boxes()}
         for index, item in enumerate(items):
             item_type = self.store.item_type(item)
             price = export.format_price(item.get("price")) or ""
             self.item_ids.append(item["id"])
             self.item_tree.insert("", "end", iid="item_%d" % index, values=(
-                item["name"], item_type["name"], item.get("location", ""), price))
+                item["name"], item_type["name"], item.get("location", ""), price),
+                tags=("filtered",) if state["filtered"] else ())
         active_filters = dict(filters)
         summary = describe_filters(self.store, active_filters)
         self.status.configure(text="%d item(s)  ·  %s  ·  %s  ·  total %s" % (
@@ -281,6 +379,8 @@ class DesktopApp(object):
         box = self.store.box_of_item(item["id"])
         lines = ["%s" % item["name"], "Type: %s" % self.store.item_type(item)["name"],
                  "Box: %s" % (box["label"] if box else "?"), "ID: %s" % item["id"]]
+        if box and box_tags.tags_of(box):
+            lines.append("Box tags: %s" % ", ".join(box_tags.tags_of(box)))
         for _key, label, _kind, value in self.store.item_fields(item):
             if value not in (None, "", []):
                 if isinstance(value, list):
@@ -309,11 +409,14 @@ class DesktopApp(object):
             return
         description = self._ask("Box", "Description", (box or {}).get("description", ""))
         if description is None:
-            description = (box or {}).get("description", "")
+            return
+        tags = self._ask("Box", "Tags (comma-separated)", ", ".join(box_tags.tags_of(box or {})))
+        if tags is None:
+            return
         if box:
-            self.store.update_box(box["id"], label=label, description=description)
+            self.store.update_box(box["id"], label=label, description=description, tags=tags)
         else:
-            self.store.create_box(label, description)
+            self.store.create_box(label, description, tags=tags)
         self.refresh()
 
     def delete_box(self):
@@ -478,15 +581,10 @@ class DesktopApp(object):
         boxes = [box for box in box_order.ordered_boxes(self.store) if box["id"] != item["box"]]
         if not boxes:
             return self.messagebox.showinfo("Move item", "There are no other boxes.", parent=self.root)
-        box_names = ["%s (%s)" % (box["label"], box["id"][:6]) for box in boxes]
-        target = self.simpledialog.askstring("Move item", "Move '%s' to which box?\n%s" % (
-            item["name"], "\n".join(box_names)), parent=self.root)
-        if target is None:
+        target = ask_move_destination(self.root, item["name"], boxes)
+        if not target:
             return
-        box = boxes[box_names.index(target.strip())] if target.strip() in box_names else None
-        if box is None:
-            return self.messagebox.showerror("Move item", "Choose one of the listed boxes.", parent=self.root)
-        self.store.move_item(item["id"], box["id"])
+        self.store.move_item(item["id"], target)
         self.refresh()
 
     def delete_selected(self):
@@ -585,49 +683,38 @@ class DesktopApp(object):
             path = export.export_inventory_pdf(self.store, images=choice == 0)
         self.messagebox.showinfo("Export all", "Export saved to:\n%s" % path, parent=self.root)
 
-    def _visible_items(self):
+    def _active_filters(self):
         filters = dict(self.filters)
         filters["text"] = self.query.get()
         box_id = self._selected_box()
         if box_id:
             filters["box"] = box_id
-        return self.store.search_items(**filters)
+        return filters
+
+    def _visible_items(self):
+        return self.store.search_items(**self._active_filters())
 
     def edit_filters(self):
-        filters = dict(self.filters)
-        filters["text"] = self.query.get()
-        for key, label in (("location", "Location contains"), ("origin", "Origin contains"),
-                           ("min_price", "Minimum price (€)"), ("max_price", "Maximum price (€)")):
-            value = self._ask("Search filters", label, str(filters.get(key) or ""))
-            if value is not None:
-                filters[key] = value or None
-        boxes = box_order.ordered_boxes(self.store)
-        labels = ["All boxes"] + ["%s (%s)" % (b["label"], b["id"][:6]) for b in boxes]
-        selected = self._choose("Filter by box", labels)
-        if selected is not None:
-            filters["box"] = boxes[selected - 1]["id"] if selected else None
-        types = self.store.list_types()
-        labels = ["All types"] + [t["name"] for t in types]
-        selected = self._choose("Filter by type", labels)
-        if selected is not None:
-            filters["type_id"] = types[selected - 1]["id"] if selected else None
-        selected = self._choose("Sort by", list(SORT_KEYS))
-        if selected is not None:
-            filters["sort"] = SORT_KEYS[selected]
-        if self.messagebox.askyesno("Search filters", "Show only items with photos?",
-                                    parent=self.root):
-            filters["with_images"] = True
-        else:
-            filters["with_images"] = False
-        filters.pop("text", None)
-        self.store.search_items(text=filters.get("text", ""), **filters)
-        self.filters = filters
-        self.refresh_items()
+        result = ask_filters(self.root, FilterDraft(self.store, self._active_filters()))
+        if result is not None:
+            self._apply_filters(result)
+
+    def _apply_filters(self, filters):
+        self._updating_filters = True
+        try:
+            self.filters = dict(filters)
+            self.query.set(self.filters.pop("text", ""))
+            self.refresh()
+        finally:
+            self._updating_filters = False
 
     def clear_filters(self):
-        self.filters = {}
-        self.query.set("")
-        self.refresh_items()
+        self._apply_filters({})
+
+    def clear_tag_filter(self):
+        values = self._active_filters()
+        values.pop("tag", None)
+        self._apply_filters(values)
 
     def import_image(self):
         item = self._selected_item()

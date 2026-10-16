@@ -82,7 +82,7 @@ YetAnotherStuffApp for Windows - quick setup
    Help > Trash, backups and recovery explains archive limits and scope.
 
 This ZIP requires Python. It is not a standalone .exe. Test packages are
-not approved releases. BUILD-INFO.json identifies the version, Step 02,
+not approved releases. BUILD-INFO.json identifies the version, Step 03,
 base commit and SHA-256 file inventory (including uncommitted app changes).
 iCloud folder recognition on iPhone does not establish synchronization
 with Windows. Avoid simultaneous edits on multiple devices.
@@ -100,3 +100,26 @@ Last modified records item/photo edits, deletion, restore and both sides of
 moves; creation dates are preserved. Old unrecorded events cannot be rebuilt.
 Sorting does not change records or exports. See Help > Boxes for details,
 legacy timestamp limits and activity left by an operation that fails.
+
+BOX TAGS AND FILTERS (0.3.10)
+
+Create/Edit Box accepts comma-separated tags (20 per box, 64 characters each).
+Spaces and case-insensitive duplicates are normalized, preserving spelling.
+Tags stay with box data in backups, trash restore and box/inventory exports
+(Markdown/PDF). Standalone item exports retain their existing fields/box label.
+Filter shows all criteria together. Apply validates and commits the draft;
+Clear / Reset filters clears the draft, then Apply activates it. Cancel/Esc
+discards edits. Box tag combines with text, box, type, location, origin, prices
+and photos. All tags clears only the tag; All boxes clears only the box.
+Tag filtering also narrows the box list and works with every box sort mode.
+Tag choices offer A-Z/Z-A, most/fewest boxes and Reverse tag order. The order
+is saved on this device on Apply; active filters last only for the session.
+
+Filtered boxes use amber; filtered items use teal. Each list shows FILTERED,
+visible/total counts and the criteria affecting that list, even with no matches.
+Sorting alone keeps the normal appearance. Clear filters beside Filter resets
+the active search and all filter conditions immediately (Search > Clear filters),
+without opening the form. Clear box tag removes only the tag restriction.
+Move opens a destination-box dropdown with Move and Cancel. All other boxes
+are available, including destinations hidden by the current tag filter.
+Use a test inventory for the visual checklist, including Enter/Esc and focus.

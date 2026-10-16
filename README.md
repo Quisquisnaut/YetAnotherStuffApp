@@ -67,7 +67,7 @@ python tools/smoke_release.py dist/*.zip --report dist/console-smoke.json
 ```
 
 `--platform windows` is the default. Every ZIP contains `main.py`, `stuffapp/`,
-README, platform instructions and `BUILD-INFO.json` with version, Step 02, base
+README, platform instructions and `BUILD-INFO.json` with version, Step 03, base
 commit and an exact SHA-256 inventory of the packaged working tree. Tests, user
 data, backups, settings, caches and temporary files are excluded.
 
@@ -109,6 +109,40 @@ Creation dates are preserved. Sorting itself never rewrites inventory files.
 Old unrecorded events cannot be reconstructed; unknown dates go last. See
 Help > Boxes for ties, legacy timezones and operation-failure limits.
 
+**Box tags and filters (0.3.10):** add optional comma-separated tags when creating
+or editing a box. Spaces are normalized and case-insensitive duplicates are
+removed while preserving the first spelling: `Work, work` becomes `Work`.
+Each box accepts up to 20 tags, each at most 64 characters; commas separate tags.
+Tags belong to boxes, independently of item types. Existing untagged boxes work
+without conversion. Box tags are kept in backups, trash restore and box/inventory
+exports. Standalone item exports retain their existing fields and box label.
+
+Use **Filter** on Windows, **Home > Filter boxes** or **Search > Filters** on
+Pythonista, or **Boxes > Filter boxes...** / **Search** in console. All existing
+criteria and the new box-tag selector share one form (a compact overview in
+console). **Apply** validates and applies once. **Clear / Reset filters** resets
+the draft, including search text; press Apply to use it. **Cancel**, Escape or
+Back discards the draft. All tags clears only the tag condition; All boxes clears
+only the specific-box condition. Other conditions combine with AND. The tag
+condition also narrows the box list and works with every box sort order.
+
+Active views show **FILTERED**, the visible/total count and their criteria.
+Filtered box lists use amber; filtered item results use teal. Sorting alone
+keeps the normal appearance, and zero results still show the active filters.
+**Clear filters** outside the form immediately clears the active search and all
+filter conditions, just like Search > Clear filters. **Clear box tag** removes
+only the tag condition. Box contents in Pythonista and console show all items
+in that box independently of Search filters. Console keeps these labels when
+ANSI colors are unavailable or `NO_COLOR` is set.
+
+On Windows, **Move** opens a destination-box dropdown with Move and Cancel.
+It lists all other boxes, including those hidden by an active tag filter.
+
+Tag choices show the total number of associated boxes. Sort them A-Z (default),
+Z-A, most or fewest boxes first; **Reverse tag order** is always available.
+Tag order is saved on this device only when Apply succeeds; active search filters
+last for the session. Tag spelling/associations survive restart with the inventory.
+
 * **Every item is always in exactly one box.** You choose the box when you create
   or import an item. You can move an item to another box or delete it, but an
   item can never be without a box.
@@ -121,7 +155,7 @@ Help > Boxes for ties, legacy timezones and operation-failure limits.
 
 ## Features
 
-* **Create Box**: a box has a label and an optional description. You can edit it,
+* **Create Box**: a box has a label, optional description and optional tags. You can edit it,
   delete it (only when empty), and export it to PDF or Markdown with all its items
   and pictures.
 * **Create Item**: an item has a **name** and a **type** (both required); all other
@@ -188,7 +222,7 @@ Help > Boxes for ties, legacy timezones and operation-failure limits.
 * **Import Image**: attaches one or more pictures to an item. On iPhone you can
   take them with the camera or pick them from Photos, Files or the Pythonista folder.
 * **Search & filter**: free-text search across all fields and box labels.
-  - Filters: box, type, location, origin, price range, "has photos".
+  - Filters: box, box tag, type, location, origin, price range, "has photos".
   - Sort: by name, price (highest first), newest, box, type or year of acquisition.
   - You see the result count and total value, and you can export the results.
 * **Export all**: the whole inventory, grouped by box, as one PDF (with or without

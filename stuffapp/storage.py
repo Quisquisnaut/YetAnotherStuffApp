@@ -35,6 +35,7 @@ from datetime import date, datetime, timedelta
 
 from .itemtypes import BUNDLED_IDS, GENERIC, PRESET_FIELDS
 from .box_order import latest_stamp
+from . import box_tags
 
 # The standard item fields, in display order: (key, label, kind). ``kind``
 # is "line" (one line of text), "text" (several lines), "links", "price" or
@@ -759,14 +760,19 @@ class Store(object):
         return self.create_box(UNSORTED_LABEL, "Items whose box was missing.")
 
     # --------------------------------------------------------------- boxes
-    def create_box(self, label, description=""):
+    def create_box(self, label, description="", tags=None):
         label = _one_line(label)
         if not label:
             raise StorageError("A box needs a label.")
+        try:
+            tags = box_tags.normalize(tags)
+        except ValueError as exc:
+            raise StorageError(str(exc))
         box = {
             "id": _new_id(),
             "label": label,
             "description": _clean_str(description),
+            "tags": tags,
             "created": _now(),
             "modified": _now(),
         }
@@ -792,9 +798,15 @@ class Store(object):
     def update_box(self, box_id, **changes):
         box = self.get_box(box_id)
         for key, value in changes.items():
-            if key not in ("label", "description"):
+            if key not in ("label", "description", "tags"):
                 raise StorageError("Unknown box field: %s" % key)
-            value = _one_line(value) if key == "label" else _clean_str(value)
+            if key == "tags":
+                try:
+                    value = box_tags.normalize(value)
+                except ValueError as exc:
+                    raise StorageError(str(exc))
+            else:
+                value = _one_line(value) if key == "label" else _clean_str(value)
             if key == "label" and not value:
                 raise StorageError("A box needs a label.")
             box[key] = value
@@ -1597,21 +1609,29 @@ class Store(object):
 
     # -------------------------------------------------------------- search
     def search_items(self, text="", box=None, location="", origin="",
-                     min_price=None, max_price=None, with_images=False, sort="name", type_id=None):
+                     min_price=None, max_price=None, with_images=False, sort="name", type_id=None, tag=None):
         """Find items.
 
         Every word of ``text`` must appear (case-insensitive) in one of the
         fields, the box label or the type name. ``box`` limits to one box
-        id, ``type_id`` to one type. ``location``/``origin`` are "contains"
-        filters, prices in Euro.
+        id, ``type_id`` to one type and ``tag`` to boxes with that tag
+        (case-insensitive exact match). ``location``/``origin`` are "contains"
+        filters, prices in Euro. Conditions are combined with AND.
         """
-        labels = dict((b["id"], b["label"]) for b in self.list_boxes())
+        boxes = self.list_boxes()
+        labels = dict((b["id"], b["label"]) for b in boxes)
+        try:
+            tagged_ids = {b["id"] for b in box_tags.filter_boxes(boxes, tag)} if tag else None
+        except ValueError as exc:
+            raise StorageError(str(exc))
         type_names = dict((t["id"], t["name"]) for t in self.list_types())
         words = text.lower().split()
         min_price = parse_price(min_price)
         max_price = parse_price(max_price)
         result = []
         for item in self.list_items():
+            if tagged_ids is not None and item.get("box") not in tagged_ids:
+                continue
             if box and item.get("box") != box:
                 continue
             if type_id and item.get("type") != type_id:

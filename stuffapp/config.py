@@ -1,4 +1,4 @@
-"""Device-local settings: data-folder access and box ordering.
+"""Device-local settings: data-folder access, box ordering and tag ordering.
 
 Settings are kept in ``stuffapp_settings.json`` next to ``main.py``. They
 are local to the device, so a phone and a computer can point to the same

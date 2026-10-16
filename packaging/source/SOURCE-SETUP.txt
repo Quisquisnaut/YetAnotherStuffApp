@@ -1,4 +1,4 @@
-YetAnotherStuffApp - portable source/console test package (Step 02)
+YetAnotherStuffApp - portable source/console test package (Step 03)
 
 Extract the complete ZIP and keep main.py next to stuffapp.
 Requires Python 3. No third-party dependencies are required.
@@ -15,7 +15,7 @@ For iPhone/iPad use the Pythonista package and its dedicated instructions.
 By default StuffData is next to main.py. --data overrides STUFFAPP_DATA,
 which overrides the location saved in Settings. Keep independent backups
 before changing a data location or updating. This package contains no data.
-BUILD-INFO.json records the version, Step 02, base commit and file hashes.
+BUILD-INFO.json records the version, Step 03, base commit and file hashes.
 
 Settings has Browse for an inventory folder..., Enter an inventory folder
 path..., Use default folder (StuffData), How to move your inventory... and
@@ -52,3 +52,25 @@ Last modified records item/photo edits, deletion, restore and both sides of
 moves; creation dates are preserved. Old unrecorded events cannot be rebuilt.
 Sorting does not change records or exports. See Help > Boxes for details,
 legacy timestamp limits and activity left by an operation that fails.
+
+BOX TAGS AND FILTERS (0.3.10)
+
+Create/Edit Box accepts comma-separated tags (20 per box, 64 characters each).
+Spaces and case-insensitive duplicates are normalized, preserving spelling.
+Boxes > Filter boxes... or Search opens a compact overview of all criteria.
+Edit only the fields needed, then Apply. Clear resets the draft, not the live
+filters; Apply activates the reset. Cancel/Back discards the draft. Box tag
+combines with text, box, type, location, origin, prices and photos, and narrows
+the box list without changing the chosen box order. All tags clears only tag;
+All boxes clears only the specific box. Tag choices have counts, A-Z/Z-A,
+most/fewest boxes and Reverse tag order. Tag order saves on this device on
+Apply; active filters last for the session. Tags survive restart, backups,
+trash restore and box/inventory Markdown/PDF exports. Standalone item exports
+retain their existing fields and box label.
+
+Box and item lists show FILTERED, visible/total counts and active criteria,
+including zero matches. Amber/cyan ANSI headings distinguish filtered boxes
+and items where supported; plain terminals and NO_COLOR keep the text labels.
+Sorting alone is not filtering. Search > Clear filters clears active filters
+immediately, without editing a form. Boxes > Clear box tag removes only the tag.
+Box contents always shows every item in that box independently of Search.
