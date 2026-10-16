@@ -8,6 +8,10 @@
 **Destinazione prevista nel repository:** `docs/DEVELOPMENT_PLAN.md` (da pubblicare quando saranno disponibili i permessi).\
 **File attuale:** copia locale del piano, non sincronizzata con GitHub.
 
+**Intervento aggiuntivo autorizzato dopo lo Step 0:** scelta della cartella dati in Pythonista, con percorso manuale `0.3.3` e selettore nativo `0.3.4` collaudati dall'utente; estensione `0.3.5` approvata con scelta **2** il 16 ottobre: etichette/guida chiare e copia completa verificata dal picker. Anticipate solo le protezioni necessarie a questa copia; resto dello Step 1 da affrontare separatamente. Branch locale `feature/pythonista-data-folder`, senza worktree. [PYTHONISTA_DATA_FOLDER_REPORT](reports/PYTHONISTA_DATA_FOLDER_REPORT.md); commit dopo Go, merge finale locale prima del push.
+
+**Collaudo finale `0.3.5`:** **Pythonista OK**, seguito da **«Go on»** dell'utente. Chiusura autorizzata: commit sul branch, merge nel `main` locale e poi push; verifica dei medesimi sorgenti/pacchetti senza suite locali ridondanti.
+
 ## Avanzamento del lavoro
 
 - Baseline `main` `c1094e3` v0.3.0: generati i pacchetti di riferimento Windows/Pythonista. Avvio Pythonista verificato dall’utente dopo la correzione del decoratore `objc_util.on_main_thread`.
@@ -19,6 +23,10 @@
 - Autorizzazione esplicita «Merge e poi push» ricevuta: `main` aggiornato tramite fast-forward a `00fdc7f` e pubblicato su `origin/main`. [Workflow 38781729987](https://github.com/Quisquisnaut/YetAnotherStuffApp/actions/runs/38781729987) completato con successo su Windows, Linux e macOS; artefatti scaricati e JSON di console, launcher e GUI/focus controllati. Nessuna release pubblicata.
 - Rapporto e checklist: [docs/reports/STEP_00_REPORT.md](reports/STEP_00_REPORT.md); build locali in `dist/`. Stato dello Step 0: **APPROVATO e integrato**. Step 1 non iniziato.
 - Regola operativa richiesta dall'utente e salvata in `AGENTS.md`: niente suite ridondanti per fast-forward dello stesso commit verificato; niente test per sole modifiche a documentazione o pacchetti di distribuzione. Usare controlli di coerenza/integrita pertinenti e non rilanciare la CI per tali aggiornamenti.
+- Intervento Pythonista `0.3.3`: aggiunta voce Settings per un percorso esistente, verifica di accesso, conferma e memorizzazione senza copiare l'inventario corrente. **193 test passati**, pacchetti verificati, 13 file dati/impostazioni invariati. L'utente ha confermato il funzionamento su iPhone e richiesto anche un dialogo per scegliere la cartella.
+- Estensione `0.3.4`: selettore nativo iOS, permesso persistente tramite bookmark e recupero prima dell'apertura dei dati se la cartella deve essere autorizzata di nuovo; percorso manuale conservato. **220 test passati**, revisione senza rilievi residui, 13 file dati/impostazioni invariati e pacchetti Windows/Pythonista/sorgente verificati in `dist/`. Step 0 resta chiuso alla `0.3.2`; questo intervento separato attende collaudo del picker e Go. Nessun commit, merge o push; Step 1 non iniziato.
+- Collaudo `0.3.4`: l'utente conferma il picker funzionante su Pythonista iOS. Richiesti testi piu chiari e opzione di copia nel picker; dopo discussione e confronto tra alternative, approvata esplicitamente l'opzione 2. La `0.3.5` aggiunge Open / Copy / Cancel, copia completa verso cartella completamente vuota, verifica SHA-256, conservazione dell'originale e serializzazione dei cambi cartella; include backups, trash ed exports. Non modifica reset o backup ordinari, ne la vecchia copia parziale Windows/console/scorciatoie. **241 test verificati**: 240 passati nella suite completa, 1 launcher fallito nel sandbox e passato isolatamente fuori sandbox senza modifiche ai sorgenti. Revisione senza blocchi, 13 file dati/impostazioni invariati; build Windows/Pythonista/sorgente `0.3.5` verificate in `dist/`. Nessun commit/merge/push; collaudo iPhone della nuova copia e Go in attesa.
+- Collaudo finale `0.3.5` confermato: **Pythonista OK**. Go ricevuto per commit e prosecuzione del workflow concordato: merge locale prima del push, senza worktree o PR. Sorgenti applicativi e hash dei tre ZIP ancora identici a quelli verificati; aggiornamenti di chiusura solo documentali, nessuna nuova suite.
 
 ## 1. Obiettivi e limiti
 
@@ -277,7 +285,7 @@ Al termine dello step consegnare **sia il rapporto sia le build**. Il rapporto n
 | Step | Stato | Build | Test automatici | Controllo visuale | Rapporto |
 |---|---|---|---|---|---|
 | 0. Pipeline / build / versione / iCloud | **APPROVATO e integrato in main** | Windows/Pythonista/sorgente `0.3.2` in `dist/`; `0.3.1` conservate | 175 passati locali; CI Windows/Linux/macOS verde; console/launcher/GUI/focus OK | Windows, console e Pythonista `0.3.2` confermati OK dall'utente | [STEP_00_REPORT](reports/STEP_00_REPORT.md) |
-| 1. Dati / backup / reset | Da iniziare | No | No | No | No |
+| 1. Dati / backup / reset | Da affrontare separatamente; sole protezioni copia picker anticipate con approvazione nella `0.3.5` | Vedi intervento Pythonista | Vedi rapporto Pythonista per la copia picker | In attesa per la nuova copia | [PYTHONISTA_DATA_FOLDER_REPORT](reports/PYTHONISTA_DATA_FOLDER_REPORT.md) |
 | 2. Ordinamento box | Da iniziare | No | No | No | No |
 | 3. Tag box / filtri / ordinamento tag | Da iniziare | No | No | No | No |
 | 4. Ordinamento articoli | Da iniziare | No | No | No | No |

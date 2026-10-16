@@ -103,6 +103,11 @@ def item_summary(store, item):
 def startup(store):
     """Health check, automatic backup and trash clean-up.
     Returns a list of messages for the user."""
+    # A folder-permission transaction can preflight before committing settings.
+    # Its UI consumes these messages once without repeating repairs or backups.
+    prepared = store.__dict__.pop("_prepared_startup_messages", None)
+    if prepared is not None:
+        return prepared
     messages = []
     repaired, problems, rehomed = store.check()
     if repaired:
@@ -891,7 +896,37 @@ def main(argv=None):
                         help="force text menus on every platform (no desktop or touch GUI)")
     args = parser.parse_args(argv)
 
-    store = Store(args.data or default_data_dir())
+    folder = args.data or default_data_dir()
+    access = None
+    remember = False
+    ios_folders = None
+    if not args.data and not os.environ.get("STUFFAPP_DATA"):
+        from . import ios_folders
+        try:
+            folder, access, remember = ios_folders.restore_saved_folder(folder)
+        except (OSError, ValueError) as exc:
+            access = ios_folders.request_folder_again(exc, folder)
+            if access is None:
+                return
+            folder = access.path
+            remember = True
+    try:
+        if access is not None:
+            from . import data_location
+            folder = data_location.existing_folder(folder)
+            data_location.check_writable(folder)
+        store = Store(folder)
+        if remember:
+            from . import config
+            messages = startup(store)
+            config.set_data_dir(folder, strict=True, pythonista_access=access.metadata(folder))
+            store._prepared_startup_messages = messages
+        if ios_folders is not None:
+            ios_folders.activate(access)
+    except BaseException:
+        if access is not None:
+            access.close()
+        raise
     if not args.console:
         try:
             from . import touch

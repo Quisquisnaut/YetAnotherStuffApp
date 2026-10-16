@@ -20,12 +20,21 @@ DATA_FOLDER_NAME = "StuffData"
 _DATA_SUBDIRS = ("boxes", "items", "images", "meta")
 
 
-def load_settings(path=None):
+def load_settings(path=None, strict=False):
+    """Read settings; strict edits allow a missing file but preserve unreadable ones."""
     try:
         with open(path or SETTINGS_FILE, "r", encoding="utf-8") as fh:
             data = json.load(fh)
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            if strict:
+                raise ValueError("The settings file must contain a JSON object.")
+            return {}
+        return data
+    except FileNotFoundError:
+        return {}
     except (OSError, ValueError):
+        if strict:
+            raise
         return {}
 
 
@@ -89,11 +98,15 @@ def copy_data(source, target):
         shutil.copytree(src, dst)
 
 
-def set_data_dir(folder, settings_path=None):
-    """Remember ``folder`` as the data folder (``None`` = default)."""
-    settings = load_settings(settings_path)
+def set_data_dir(folder, settings_path=None, strict=False, pythonista_access=None):
+    """Remember a folder (None = default); strict refuses unreadable existing settings."""
+    settings = load_settings(settings_path, strict=strict)
     if folder:
         settings["data_dir"] = os.path.abspath(os.path.expanduser(folder))
     else:
         settings.pop("data_dir", None)
+    if folder and pythonista_access:
+        settings["pythonista_data_folder"] = pythonista_access
+    else:
+        settings.pop("pythonista_data_folder", None)
     save_settings(settings, settings_path)

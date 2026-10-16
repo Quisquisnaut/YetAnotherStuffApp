@@ -12,6 +12,7 @@ the ``task`` decorator; view updates go through ``objc_util.on_main_thread``.
 import functools
 import io
 import os
+import threading
 import time
 import weakref
 import webbrowser
@@ -22,7 +23,7 @@ import dialogs
 import photos
 import ui
 
-from . import __version__, backup, config, export, guide
+from . import __version__, backup, config, data_location, export, guide, ios_folders
 from .app import (KIND_CHOICES, KIND_NAMES, TRASH_DAYS, describe_filters, due_text, hidden_dirs, options_text,
                   reminder_line, startup)
 from .images import pil_to_jpeg_bytes, to_jpeg_bytes
@@ -68,6 +69,21 @@ def task(func):
             console.alert("Error", str(exc), "OK", hide_cancel_button=True)
             return None
     return ui.in_background(wrapper)
+
+
+def location_task(func):
+    """Keep one location operation stable from its first dialog to activation."""
+    @task
+    @functools.wraps(func)
+    def wrapper(screen, *args, **kwargs):
+        lock = screen.app._location_lock
+        if not lock.acquire(False):
+            raise ValueError("A data-folder change is in progress. Wait for it to finish.")
+        try:
+            return func(screen, *args, **kwargs)
+        finally:
+            lock.release()
+    return wrapper
 
 
 def confirm(title, message, button="Delete"):
@@ -1269,23 +1285,32 @@ class SettingsScreen(TableScreen):
         icloud = config.icloud_data_dir()
         in_icloud = config.is_icloud_drive_path(root)
         project_in_icloud = config.is_icloud_drive_path(local)
-        rows = [{"title": "iCloud Drive (project folder)" if project_in_icloud else "On this device",
-                 "subtitle": "Project directory in iCloud Drive" if project_in_icloud else "Pythonista > This iPhone",
+        rows = [{"title": "Use app folder (iCloud Drive)" if project_in_icloud else "Use this app's StuffData folder",
+                 "subtitle": "Opens beside this app; optional partial copy",
                  "accessory": "checkmark" if root == os.path.abspath(local) else "none",
                  "on_tap": functools.partial(self.on_location, local, False)}]
         if icloud:
-            rows.append({"title": "iCloud Drive (Pythonista folder)",
-                         "subtitle": "Pythonista > iCloud; syncs between devices",
+            rows.append({"title": "Use Pythonista's iCloud folder",
+                         "subtitle": "Opens Pythonista iCloud; optional partial copy",
                          "accessory": "checkmark" if root == os.path.abspath(icloud) else "none",
                          "on_tap": functools.partial(self.on_location, icloud, True)})
         elif not in_icloud:
             rows.append({"title": "Pythonista iCloud folder not detected", "color": MUTED,
-                         "subtitle": "The dedicated Pythonista folder is not accessible here; iCloud Drive may still be on"})
-        if in_icloud and root != os.path.abspath(local) and (
+                         "subtitle": "Use Browse for other iCloud folders"})
+        if root != os.path.abspath(local) and (
                 not icloud or root != os.path.abspath(icloud)):
-            rows.insert(0, {"title": "iCloud Drive (current folder)",
-                            "subtitle": "Using a folder selected in Files",
+            rows.insert(0, {"title": "iCloud Drive (current folder)" if in_icloud else "Custom data folder (current)",
+                            "subtitle": "Using a custom data folder",
                             "accessory": "checkmark"})
+        rows.append({"title": "Browse for an inventory folder...",
+                     "subtitle": "Open or copy; original folder kept",
+                     "on_tap": self.on_pick_location})
+        rows.append({"title": "Enter an inventory folder path...",
+                     "subtitle": "Paste a path; opens without copying",
+                     "on_tap": self.on_custom_location})
+        rows.append({"title": "How to move your inventory...",
+                     "subtitle": "Button differences and complete relocation",
+                     "on_tap": self.on_location_help})
         self.show([
             ("Data location", rows),
             ("Data", [{"title": "Reset this data folder",
@@ -1296,7 +1321,61 @@ class SettingsScreen(TableScreen):
             ("About", [{"title": "YetAnotherStuffApp %s" % __version__, "color": MUTED}]),
         ])
 
-    @task
+    @location_task
+    def on_pick_location(self):
+        access = ios_folders.pick_folder(self.app.store.root)
+        if access is None:
+            return
+        try:
+            action = choose("What should happen in the selected folder?", [
+                "Open this folder", "Copy current inventory here", "Cancel"])
+            if action == 0:
+                self.use_custom_location(access.path, access)
+            elif action == 1 and confirm(
+                    "Copy and use this folder?",
+                    "From: %s\nTo: %s\n\nCopy ALL files, including photos, item types, backups, trash and exports. "
+                    "The destination must be completely empty and outside the current data folder. "
+                    "Your original folder will be kept. After verification, the app will use the copy."
+                    % (self.app.store.root, access.path), "Copy and use"):
+                self.app.switch_data_dir(access.path, remember=True, copy_existing=False,
+                                         folder_access=access, copy_complete=True)
+        finally:
+            if ios_folders.current_access() is not access:
+                access.close()
+
+    def on_location_help(self):
+        index = guide.topic_titles().index("Open, copy or move an inventory")
+        self.app.push(HelpTopicScreen(self.app, index))
+
+    @location_task
+    def on_custom_location(self):
+        path = ask_text("Open inventory by path",
+                        "Enter the full path of the data folder itself; it must already exist. "
+                        "This opens the folder without copying. For external folders, use Browse first "
+                        "or grant access in Pythonista: External Files > Open... > Folder...",
+                        self.app.store.root)
+        if path is None:
+            return
+        self.use_custom_location(path)
+
+    def use_custom_location(self, path, access=None):
+        folder = data_location.existing_folder(path)
+        same = folder == self.app.store.root
+        if not same:
+            try:
+                same = os.path.samefile(folder, self.app.store.root)
+            except OSError:  # The previous external folder may no longer be available.
+                pass
+        if same and access is None:
+            return
+        if not confirm("Open this inventory folder?",
+                       "%s\n\nOpen the inventory already here. An empty folder starts an empty inventory. "
+                       "Your current data will stay in its original folder. Nothing will be copied or moved."
+                       % folder, "Open folder"):
+            return
+        self.app.switch_data_dir(folder, remember=True, copy_existing=False, folder_access=access)
+
+    @location_task
     def on_location(self, folder, remember):
         if os.path.abspath(folder) == self.app.store.root:
             return
@@ -1304,7 +1383,7 @@ class SettingsScreen(TableScreen):
             return
         self.app.switch_data_dir(folder, remember)
 
-    @task
+    @location_task
     def on_reset_data(self):
         root = self.app.store.root
         if not confirm("Reset data folder?",
@@ -1323,6 +1402,7 @@ class SettingsScreen(TableScreen):
 class TouchApp(object):
     def __init__(self, store):
         self.store = store
+        self._location_lock = threading.RLock()
         self.filters = {}
         self.screens = weakref.WeakSet()
         self.home = HomeScreen(self)
@@ -1496,16 +1576,46 @@ class TouchApp(object):
         self.refresh_all()
         info("Backup restored", "Your previous data was saved as a backup.")
 
-    def switch_data_dir(self, folder, remember):
-        if not config.has_data(folder) and config.has_data(self.store.root) and confirm(
-                "Copy data?", "The new location is empty. Copy your boxes and items there?", "Copy"):
+    def switch_data_dir(self, folder, remember, copy_existing=True, folder_access=None, copy_complete=False):
+        if not self._location_lock.acquire(False):
+            raise ValueError("A data-folder change is in progress. Wait for it to finish.")
+        try:
+            self._switch_data_dir(folder, remember, copy_existing, folder_access, copy_complete)
+        finally:
+            self._location_lock.release()
+
+    def _switch_data_dir(self, folder, remember, copy_existing, folder_access, copy_complete):
+        if not copy_existing:
+            folder = data_location.existing_folder(folder)
+            if not copy_complete:
+                data_location.check_writable(folder)
+        if copy_existing and not config.has_data(folder) and config.has_data(self.store.root) and confirm(
+                "Copy data?", "Copy boxes, items, photos and item types? Backups, trash and exports are excluded. "
+                "For a complete copy use Browse for an inventory folder instead.", "Copy"):
             if not os.path.isdir(folder):
                 os.makedirs(folder)
             config.copy_data(self.store.root, folder)
-        config.set_data_dir(folder if remember else None)
-        self.store = Store(folder)
+        if copy_complete:
+            config.load_settings(strict=True)  # Do not copy if the known settings cannot be preserved.
+            data_location.copy_inventory(self.store.root, folder)
+        try:
+            candidate = Store(folder)
+            messages = startup(candidate)
+            access = folder_access or ios_folders.current_access()
+            metadata = access.metadata(folder) if access is not None else None
+            if not remember or metadata is None:
+                access = None
+            config.set_data_dir(folder if remember else None, strict=not copy_existing,
+                                pythonista_access=metadata if access else None)
+        except Exception as exc:
+            if copy_complete:
+                raise OSError("The copy was verified at %s, but it could not be activated. "
+                              "Your original location is still selected. Keep both folders and "
+                              "use Browse to open the copy after resolving this error: %s" % (folder, exc)) from exc
+            raise
+        self.store = candidate
         self.filters = {}
-        messages = startup(self.store)
+        ios_folders.activate(access)
         self.refresh_all()
         info("Data location changed", "\n\n".join(["Now using %s" % folder] + messages))
 

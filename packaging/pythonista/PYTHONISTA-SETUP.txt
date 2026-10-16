@@ -4,7 +4,7 @@ YetAnotherStuffApp for Pythonista 3 - test package (Step 00)
    folder. Copy/open the entire folder in Pythonista, then run main.py.
    The archive contains no inventory or device settings.
 2. If the project is in iCloud Drive, Settings may show
-   "iCloud Drive (project folder)". StuffData remains next to the project;
+   "Use app folder (iCloud Drive)". StuffData remains next to the project;
    recognizing this path does not copy data or verify synchronization.
    The dedicated Pythonista iCloud container is a separate location.
 3. Help > About and Settings > About show the installed app version.
@@ -17,3 +17,45 @@ YetAnotherStuffApp for Pythonista 3 - test package (Step 00)
 6. Console alternative: run main.py --console. BUILD-INFO.json records the
    version, Step 00, base commit and SHA-256 inventory of this test package.
    Native touch rendering and iCloud availability require an iPhone test.
+
+OPEN OR COPY A DATA FOLDER (0.3.5)
+
+7. Open Settings > Browse for an inventory folder... . The native iOS picker
+   opens: browse On My iPhone or iCloud Drive and select the existing data
+   folder itself. StuffData is not appended. Then choose:
+   - Open this folder: use its existing inventory, or start empty if empty.
+   - Copy current inventory here: copy ALL files to an existing completely
+     empty, separate folder, including photos, types, backups, trash and
+     exports. Confirm source/destination, wait for verification, then the
+     app uses the copy. Your original folder is kept. No merging.
+   - Cancel: keep your current location.
+8. The app remembers the selected folder and its access permission. Close
+   and relaunch main.py to verify persistence on your device. If permission
+   becomes unavailable, startup offers Choose folder again. Select the
+   inventory folder to reauthorize it; Cancel exits without changing the
+   saved choice or creating a replacement inventory.
+9. Optional manual entry: Settings > Enter an inventory folder path... is prefilled
+   with the current path. Enter an existing folder's absolute path. A path
+   alone cannot grant access: first use the native picker or link it in
+   Pythonista's External Files > Open... > Folder... . To obtain a path,
+   create and run a small Python script INSIDE the linked data folder:
+
+       import os
+       print(os.path.dirname(os.path.abspath(__file__)))
+
+   Copy the printed path into the app's data-folder prompt. You can remove
+   that helper script afterwards. Use a separate app/settings copy on each
+   device: Windows and iOS absolute paths are different.
+10. To relocate: make an independent backup first, create a separate empty
+    folder in Files, use Browse and Copy, check your boxes/items/photos,
+    then restart Pythonista and verify the new location. Keep the original
+    until verified. Avoid edits during copying; enough free space is needed
+    for temporary and final copies. Links/special files are refused.
+    If copying fails, the current folder stays selected. Inspect any partial
+    destination before retrying. If the copy was verified but activation
+    fails, keep both folders; the error gives the path of the completed copy.
+11. Use this app's StuffData folder and Use Pythonista's iCloud folder are
+    fixed-location shortcuts. Their older optional copy includes boxes,
+    items, photos and types, but excludes backups, trash and exports. For a
+    complete copy use Browse instead. How to move your inventory... opens
+    the same explanations inside the app. No cloud synchronization added.
