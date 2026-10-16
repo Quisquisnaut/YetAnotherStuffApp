@@ -2,7 +2,7 @@
 
 **Data:** 16 ottobre 2026. **Versione precedente / nuova:** 0.3.6 / **0.3.7**.
 
-**Branch:** `feature/step-01-data-safety`, senza worktree. **Base:** `3b083be4b78fc98e75ba062017f71d0c96c0e73b`. **Stato:** verifiche locali completate; **Go ricevuto** per commit, merge locale e successivo push. Integrazione in corso. Checklist nativa non confermata voce per voce; nessun PR, tag o release previsto.
+**Branch:** `feature/step-01-data-safety`, senza worktree. **Base:** `3b083be4b78fc98e75ba062017f71d0c96c0e73b`. **Commit applicativo:** `54027a5de3ac97183516e821a5e4f9d4e2dfa77e`. **Stato:** **INTEGRATO dopo il Go**: commit sul branch, merge fast-forward nel `main` locale e successivo push completati; CI verde. Checklist nativa non confermata voce per voce; nessun PR, tag o release creato.
 
 ## Ambito approvato
 
@@ -44,6 +44,22 @@ Revisione indipendente di sola lettura completata, inclusi follow-up. Risolti tu
 **Compatibilita statica:** 21 file applicativi analizzati con grammatica Python 3.8 e compilati; non equivale a esecuzione su Python 3.8 o su iOS.
 
 Evidenze locali: `dist/step-01-tests.log`, `dist/step-01-verification.json`. Quest'ultimo registra ambiente, commit base, ramo, hash dei 21 sorgenti e fingerprint dei dati. Suite eseguita fuori sandbox con eccezione una tantum per utilizzare Python/launcher Windows installati, evitando il limite ambientale gia diagnosticato negli step precedenti.
+
+## CI e verifica dell'integrazione
+
+[Workflow 38903385553](https://github.com/Quisquisnaut/YetAnotherStuffApp/actions/runs/38903385553), sul commit applicativo `54027a5`, **completato con successo** su Python 3.12:
+
+| Piattaforma | Risultato della suite | Build e smoke |
+| --- | --- | --- |
+| Windows | 289 passati, 0 fallimenti, 0 skip; 36.285 s | Tre pacchetti, console, launcher e GUI passati |
+| Linux | 287 passati, 0 fallimenti, 2 skip; 12.747 s | Tre pacchetti e console passati |
+| macOS | 287 passati, 0 fallimenti, 2 skip; 11.721 s | Tre pacchetti e console passati |
+
+I due skip su Linux/macOS riguardano il launcher Windows e i nomi delle cartelle senza distinzione maiuscole/minuscole di Windows. Il job release e rimasto escluso: nessun tag o pubblicazione. Risultato e log salvati in `dist/step-01-ci.json` e `dist/step-01-ci.log`.
+
+Dopo il fast-forward sono state controllate identita dei commit e pulizia del working tree, senza ripetere la suite locale. `dist/check_step01_integration.py` confronta i 21 sorgenti verificati con i contenuti ZIP, il commit e la copia di lavoro; conferma anche i tre checksum ZIP e il fingerprint dei 17 file dati originari. Il checkout Git ha normalizzato soltanto i fine riga di `backup_archive.py` e `folder_transaction.py`; il contenuto canonico coincide. Evidenza: `dist/step-01-integration-state.json`.
+
+Nell'estrazione Windows `0.3.7` e comparso dopo la verifica un nuovo `stuffapp_settings.json`, conservato senza modificarlo. Questo file locale aggiuntivo e registrato separatamente dal riferimento dei 17 file preesistenti, tutti invariati; non costituisce conferma di collaudo visivo da parte dell'utente.
 
 ## Build prodotte e smoke test
 
@@ -99,6 +115,6 @@ Per Windows e disponibile anche l'estrazione in `dist/YetAnotherStuffApp-0.3.7-w
 ## Stato del piano e decisione di avanzamento
 
 - Step 0 e follow-up fino alla 0.3.6: gia integrati, rapporti storici invariati.
-- Step 1: implementato e verificato automaticamente; build consegnabili. **Go all'integrazione ricevuto** con «go on»; la checklist nativa rimane disponibile senza attribuire conferme non espresse alle singole voci.
+- Step 1: **integrato in `main` e inviato al remoto** dopo il Go «go on», commit applicativo `54027a5`; CI Windows/Linux/macOS verde. Build consegnate; la checklist nativa rimane disponibile senza attribuire conferme non espresse alle singole voci.
 - Step 2 e successivi: non iniziati. Nessuna sincronizzazione automatica, modifica ai types o ordinamenti aggiunta in questo step.
-- Workflow autorizzato: commit sul branch, merge locale fast-forward del medesimo commit, controllo identita/stato pulito senza suite ridondante, poi push. Dopo il Go, i 21 sorgenti applicativi e i tre ZIP coincidono ancora con le evidenze verificate; nessuna nuova suite o build. Nessun PR o release previsto.
+- Workflow eseguito: commit sul branch, merge locale fast-forward del medesimo commit, controllo identita/stato pulito senza suite ridondante, poi push. I 21 sorgenti applicativi e i tre ZIP coincidono ancora con le evidenze verificate, salvo la sola normalizzazione Git dei fine riga descritta sopra. Chiusura documentale separata con `[skip ci]`, senza nuove suite o rigenerazione delle build locali. Nessun worktree, PR, tag o release.
