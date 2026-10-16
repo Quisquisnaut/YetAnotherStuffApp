@@ -2,7 +2,7 @@
 
 **Data:** 16 ottobre 2026. **Versione precedente / nuova:** 0.3.8 / **0.3.10**; build intermedia 0.3.9 conservata.
 
-**Branch:** `feature/step-03-box-tags-filters`, senza worktree. **Base:** `b690aa8c63466c232f9c3736191e855637cd402b`. **Stato: APPROVATO** — opzione A e feedback implementati; verifiche automatiche e build completate. Go finale ricevuto con «go on»: autorizzati commit sul branch, merge fast-forward nel main locale e successivo push, senza PR, tag o release. Integrazione in corso; checklist visuale conservata senza attribuire conferme non espresse per le singole voci.
+**Branch applicativo:** `feature/step-03-box-tags-filters`, senza worktree. **Base:** `b690aa8c63466c232f9c3736191e855637cd402b`. **Commit applicativo:** `61c3805c9188089113230983263348fa4d88f110`. **Stato: APPROVATO E INTEGRATO** — Go finale ricevuto con «go on»: commit sul branch, merge fast-forward nel main locale e successivo push completati, senza PR, tag o release. CI Windows/Linux/macOS verde. Checklist visuale conservata senza attribuire conferme non espresse per le singole voci.
 
 ## Ambito approvato e attivita completate
 
@@ -40,7 +40,7 @@ Nella build intermedia 0.3.9 una prima suite completa era passata con 364 test. 
 
 **Dati preesistenti:** 35 file di inventario/impostazioni invariati prima/dopo la suite 0.3.10. Fingerprint SHA-256 aggregato `028ad7f76b00a0998e831cebe9b5ece6c653a953e402c21499c35acc6a997904`. Baseline aggiornata prima del follow-up per includere i dati creati dall'utente durante il collaudo 0.3.9; la precedente verifica preservava 28 file. Ambito: `StuffData` e impostazioni della radice e delle estrazioni preesistenti in `dist/`; verifiche funzionali con inventari temporanei.
 
-**Compatibilita statica:** 25 sorgenti applicativi analizzati con grammatica Python 3.8 e compilati. Non equivale a esecuzione nativa Python 3.8/iOS. Nessun nuovo job CI o collaudo nativo Linux/macOS prima del Go; CI attesa dopo il push autorizzato.
+**Compatibilita statica:** 25 sorgenti applicativi analizzati con grammatica Python 3.8 e compilati. Non equivale a esecuzione nativa Python 3.8/iOS. Dopo il Go, CI Python 3.12 superata su Windows, Linux e macOS; nessun collaudo nativo Pythonista implicito.
 
 **Revisione indipendente:** intero diff, nuovi moduli/test non tracciati, correzione Unicode e ulteriore revisione del feedback UX 0.3.10; nessun rilievo azionabile residuo accertato. Revisione di sola lettura, senza ripetere suite o build.
 
@@ -61,7 +61,7 @@ python dist/smoke_step03_colors_gui.py
 | `YetAnotherStuffApp-0.3.10-pythonista.zip` | `1f24bbeaa46b0af8ff9c70189233afccde4a32c51ab860263f94b7ffaeb0f615` |
 | `YetAnotherStuffApp-0.3.10-source.zip` | `8afe911bec7646fea62d9e8a9d373fdab0f4a4601c9d18732243a1321b7cf66d` |
 
-Integrita ZIP, CRC, manifest, SHA-256 e corrispondenza con i sorgenti verificati. Inclusi `box_tags.py`, `filters.py` e `filter_appearance.py`; esclusi dati, impostazioni private, cache, test e helper locali. Manifest `build_kind=test`, Step `03`, commit base `b690aa8` e inventario dei contenuti con modifiche locali non ancora committate. Build precedenti conservate.
+Integrita ZIP, CRC, manifest, SHA-256 e corrispondenza con i sorgenti verificati. Inclusi `box_tags.py`, `filters.py` e `filter_appearance.py`; esclusi dati, impostazioni private, cache, test e helper locali. Manifest `build_kind=test`, Step `03`, commit base `b690aa8`: pacchetti prodotti prima del commit applicativo `61c3805`, poi verificati invariati. Contenuto Python integrato equivalente allo stato collaudato, salvo normalizzazione Git dei fine riga. Build precedenti conservate.
 
 **Tre pacchetti estratti: PASSATI.** Avvio/versione/Help > About, veri menu console per tag + testo/posizione, Apply, Clear, Cancel, inversione e persistenza dell'ordine in un nuovo processo. Associazioni, backup/ripristino, export e composizione con tutti gli ordini delle box verificati nei pacchetti finali; incluso il limite Unicode corretto. Windows provato anche tramite BAT con percorso dati contenente spazi. Verificati anche i nuovi riepiloghi e Clear filters immediato nei tre pacchetti. Il pacchetto Pythonista eseguito in console Windows non costituisce collaudo nativo iOS.
 
@@ -104,6 +104,9 @@ Su Windows GUI, console e Pythonista, dove applicabile:
 ## Stato del piano e decisione di avanzamento
 
 - Step 0–2 e relativi follow-up gia integrati; rapporti storici invariati.
-- Step 3 opzione A e feedback implementati e verificati; **Go finale ricevuto con «go on»**. Integrazione autorizzata in corso: commit sul branch, merge fast-forward nel `main` locale, controllo identita/stato pulito senza suite ridondanti, poi push.
+- Step 3 opzione A e feedback implementati e verificati; **Go finale ricevuto con «go on»**. Commit `61c3805`, merge fast-forward nel `main` locale e successivo push completati. Identita del commit e stato pulito confermati prima del push, senza suite locali ridondanti.
+- Controllo dopo il fast-forward: 63 file Python corrispondenti allo stato verificato; soltanto 11 file hanno fine riga normalizzati da Git, di cui tre sorgenti applicativi. Tre ZIP e 35 file dati/impostazioni originari invariati. Evidenza: `dist/step-03-integration-local.json`.
+- [CI 38956058804](https://github.com/Quisquisnaut/YetAnotherStuffApp/actions/runs/38956058804) sul commit applicativo: **Windows 390 passati, 0 skip; Linux/macOS 388 passati e 2 skip Windows-only ciascuno**. Build e smoke console superati su tutte le piattaforme; launcher, GUI e focus/tastiera superati su Windows. Evidenze locali: `dist/step-03-ci.json` e `dist/step-03-ci.log`.
+- Chiusura di sola documentazione con `[skip ci]`, senza nuove suite locali o rigenerazione dei pacchetti.
 - Nessun worktree, PR, tag o release previsto. Le singole voci della checklist nativa restano non confermate dove l'utente non ha fornito un esito esplicito.
 - Step 4 e successivi non iniziati.
