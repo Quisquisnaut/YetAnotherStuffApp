@@ -118,7 +118,32 @@ anything you like.
 - Edit Box: change the label or description.
 - Delete Box: only possible when the box is EMPTY. Delete its items or move
   them to other boxes first. You are always asked to confirm.
-- Export: a box can be exported to PDF or Markdown with all its items."""),
+- Export: a box can be exported to PDF or Markdown with all its items.
+
+Sort boxes: Windows has Sort... above the box list (also Box > Sort boxes...);
+Pythonista has Home > Sort boxes; console has Boxes > Sort boxes... .
+Choose number of items, name, creation date or last modified, in either
+direction. Reverse current order flips the current criterion. Cancel keeps
+your choice. The default is most items first. The criterion and direction
+are remembered on this device, separately from your inventory, and also
+apply to box pickers. All boxes stays first in the Windows navigation.
+Ties use name and internal ID; reversing a date/count keeps those ties
+stable. Unknown dates stay at the end in both directions.
+
+Last modified includes box details and changes to its items/photos:
+creation, import, clone, edit, deletion, restore and move. A move records
+activity in BOTH boxes; creation dates stay unchanged. Activity is saved
+before data changes so leaving/deleting an item cannot erase the event.
+An I/O failure can leave the attempted operation's date: read the error
+and inspect the data before retrying. This does not make multi-file edits
+atomic or resolve simultaneous edits from different devices.
+
+For old records, known box/item dates are used without rewriting them
+just for sorting. Past deletions/moves that were never recorded cannot be
+reconstructed. Existing timestamps have one-second precision; exact ties
+use name/ID. Dates without a timezone retain their original wall time;
+explicit timezone offsets are compared as UTC. Ordering changes the view,
+not IDs, item order, inventory files or exports."""),
 
     ("Items", """\
 An item has a name and a type. Everything else is optional; which details

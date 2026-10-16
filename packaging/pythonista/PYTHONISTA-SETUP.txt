@@ -1,4 +1,4 @@
-YetAnotherStuffApp for Pythonista 3 - test package (Step 01)
+YetAnotherStuffApp for Pythonista 3 - test package (Step 02)
 
 1. Extract the ZIP in Files. Keep main.py and stuffapp in the same project
    folder. Copy/open the entire folder in Pythonista, then run main.py.
@@ -15,10 +15,10 @@ YetAnotherStuffApp for Pythonista 3 - test package (Step 01)
 5. Do not edit the same inventory simultaneously on multiple devices.
    There is no automatic conflict-safe Windows/iCloud synchronization.
 6. Console alternative: run main.py --console. BUILD-INFO.json records the
-   version, Step 01, base commit and SHA-256 inventory of this test package.
+   version, Step 02, base commit and SHA-256 inventory of this test package.
    Native touch rendering and iCloud availability require an iPhone test.
 
-OPEN OR COPY A DATA FOLDER (0.3.7)
+OPEN OR COPY A DATA FOLDER (0.3.8)
 
 7. Open Settings > Browse for an inventory folder... . The native iOS picker
    opens: browse On My iPhone or iCloud Drive and select the existing data
@@ -77,3 +77,17 @@ OPEN OR COPY A DATA FOLDER (0.3.7)
     Close the app on other devices during these operations. Full recovery
     verifies raw file bytes, not record health or iCloud synchronization.
     Read Help > Trash, backups and recovery for archive limits and details.
+
+BOX ORDER (0.3.8)
+
+Windows: Sort... above Boxes, or Box > Sort boxes... .
+Pythonista: Home > Sort boxes. Console: Boxes > Sort boxes... .
+Choose item count (most first is the default), name, created or last modified,
+in either direction; Reverse current order flips the current criterion.
+Cancel keeps the current choice. Criterion/direction are saved on this device
+in stuffapp_settings.json, separate from the inventory and its backups.
+Keep that settings file when updating. Box pickers use the same preference.
+Last modified records item/photo edits, deletion, restore and both sides of
+moves; creation dates are preserved. Old unrecorded events cannot be rebuilt.
+Sorting does not change records or exports. See Help > Boxes for details,
+legacy timestamp limits and activity left by an operation that fails.

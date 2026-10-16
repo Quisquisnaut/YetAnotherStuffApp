@@ -34,6 +34,7 @@ import uuid
 from datetime import date, datetime, timedelta
 
 from .itemtypes import BUNDLED_IDS, GENERIC, PRESET_FIELDS
+from .box_order import latest_stamp
 
 # The standard item fields, in display order: (key, label, kind). ``kind``
 # is "line" (one line of text), "text" (several lines), "links", "price" or
@@ -684,6 +685,31 @@ class Store(object):
     def _item_path(self, item_id):
         return os.path.join(self.items_dir, _check_id(item_id) + ".json")
 
+    def _touch_boxes(self, box_ids, stamp=None):
+        """Persist activity before mutation, so departure/deletion cannot erase it.
+
+        A later I/O failure may leave the attempted event's date, but never a
+        silently successful item change without its box activity. Missing old
+        boxes are allowed during health-check rehoming.
+        """
+        stamp = stamp or _now()
+        for box_id in dict.fromkeys(box_ids):
+            if not box_id or not self.box_exists(box_id):
+                continue
+            box = self.get_box(box_id)
+            modified = latest_stamp(box.get("modified"), box.get("created"), stamp)
+            if box.get("modified") != modified:
+                box["modified"] = modified
+                self._write(self._box_path(box_id), box)
+
+    def _write_item(self, item):
+        """One write seam for item edits, photos, types, clones and recovery."""
+        path = self._item_path(item["id"])
+        old = self.get_item(item["id"]) if os.path.exists(path) else {}
+        self._touch_boxes((old.get("box"), item.get("box")),
+                          latest_stamp(_now(), item.get("modified"), old.get("modified")))
+        self._write(path, item)
+
     def item_image_dir(self, item_id):
         return os.path.join(self.images_dir, _check_id(item_id))
 
@@ -723,7 +749,7 @@ class Store(object):
                 boxes[target] = self.get_box(target)
                 rehomed.append(item["name"])
             item["box"] = target
-            self._write(self._item_path(item["id"]), item)
+            self._write_item(item)
         return list(self.repaired), list(self.problems), rehomed
 
     def _unsorted_box(self):
@@ -772,7 +798,7 @@ class Store(object):
             if key == "label" and not value:
                 raise StorageError("A box needs a label.")
             box[key] = value
-        box["modified"] = _now()
+        box["modified"] = latest_stamp(_now(), box.get("modified"), box.get("created"))
         self._write(self._box_path(box_id), box)
         return box
 
@@ -811,7 +837,7 @@ class Store(object):
         if item.get("box") != box_id:
             item["box"] = box_id
             item["modified"] = _now()
-            self._write(self._item_path(item_id), item)
+            self._write_item(item)
         return item
 
     def box_of_item(self, item_id):
@@ -895,7 +921,7 @@ class Store(object):
         item["box"] = box
         item["images"] = []
         item["created"] = item["modified"] = _now()
-        self._write(self._item_path(item["id"]), item)
+        self._write_item(item)
         return item
 
     def get_item(self, item_id):
@@ -942,7 +968,7 @@ class Store(object):
             raise StorageError("Not a field of the type '%s': %s" % (item_type["name"], ", ".join(new)))
         item.update(normalized)
         item["modified"] = _now()
-        self._write(self._item_path(item_id), item)
+        self._write_item(item)
         return item
 
     def clone_item(self, item_id, box_id=None):
@@ -963,12 +989,13 @@ class Store(object):
                 if os.path.isfile(src):
                     shutil.copyfile(src, os.path.join(target_dir, filename))
                     clone["images"].append(filename)
-        self._write(self._item_path(clone["id"]), clone)
+        self._write_item(clone)
         return clone
 
     def delete_item(self, item_id):
         """Move an item (with its images) to the trash."""
         item = self.get_item(item_id)
+        self._touch_boxes((item.get("box"),), latest_stamp(_now(), item.get("modified")))
         folder = self._trash_folder("item", item_id)
         self._write(os.path.join(folder, "item.json"), item)
         image_dir = self.item_image_dir(item_id)
@@ -1027,7 +1054,7 @@ class Store(object):
         item["type"] = new_type["id"]
         item.update(self._normalize_item(item, new_type))
         item["modified"] = _now()
-        self._write(self._item_path(item_id), item)
+        self._write_item(item)
         return item
 
     # ----------------------------------------------------------- reminders
@@ -1370,7 +1397,7 @@ class Store(object):
             else:
                 item[key] = [] if key == "links" else None if FIELD_KINDS[key] in ("price", "year") else ""
             item["modified"] = _now()
-            self._write(self._item_path(item["id"]), item)
+            self._write_item(item)
         return count
 
     def rename_type_field(self, type_id, key, new_name):
@@ -1390,7 +1417,7 @@ class Store(object):
             if any(n.lower() == old for n in item["extra"]):
                 item["extra"] = dict((new_name if n.lower() == old else n, v) for n, v in item["extra"].items())
                 item["modified"] = _now()
-                self._write(self._item_path(item["id"]), item)
+                self._write_item(item)
         return EXTRA_PREFIX + new_name
 
     def type_field_values(self, type_id, key):
@@ -1454,7 +1481,7 @@ class Store(object):
                         continue
                     item["extra"][other] = fixed
                     item["modified"] = _now()
-                    self._write(self._item_path(item["id"]), item)
+                    self._write_item(item)
 
     def move_type_field(self, type_id, key, offset):
         """Move a field of a user type up (-1) or down (+1)."""
@@ -1527,6 +1554,7 @@ class Store(object):
             box.pop("items", None)
             if os.path.exists(self._box_path(box["id"])):
                 raise StorageError("The box already exists.")
+            box["modified"] = latest_stamp(_now(), box.get("modified"), box.get("created"))
             self._write(self._box_path(box["id"]), box)
             shutil.rmtree(folder)
             return box
@@ -1536,6 +1564,7 @@ class Store(object):
         target = box_id or meta.get("box") or item.get("box")
         if not target or not self.box_exists(target):
             raise StorageError("The box of '%s' no longer exists: choose a box." % item["name"])
+        self._touch_boxes((target,))
         item["box"] = target
         images = os.path.join(folder, "images")
         if os.path.isdir(images):
@@ -1543,7 +1572,7 @@ class Store(object):
             if os.path.isdir(dest):
                 shutil.rmtree(dest)
             shutil.move(images, dest)
-        self._write(self._item_path(item["id"]), item)
+        self._write_item(item)
         shutil.rmtree(folder)
         return item
 
@@ -1631,6 +1660,7 @@ class Store(object):
         if not data.startswith(JPEG_MAGIC):
             raise StorageError("Only JPEG images are supported.")
         item = self.get_item(item_id)
+        self._touch_boxes((item.get("box"),))
         image_dir = self.item_image_dir(item_id)
         if not os.path.isdir(image_dir):
             os.makedirs(image_dir)
@@ -1641,7 +1671,7 @@ class Store(object):
             fh.write(data)
         item["images"].append(filename)
         item["modified"] = _now()
-        self._write(self._item_path(item_id), item)
+        self._write_item(item)
         return filename
 
     def add_image_file(self, item_id, path):
@@ -1655,7 +1685,7 @@ class Store(object):
         if filename in item["images"]:
             item["images"].remove(filename)
             item["modified"] = _now()
-            self._write(self._item_path(item_id), item)
+            self._write_item(item)
         path = self.image_path(item_id, filename)
         if os.path.exists(path):
             os.remove(path)

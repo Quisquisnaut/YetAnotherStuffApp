@@ -23,7 +23,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOP = "YetAnotherStuffApp"
 WINDOWS_DIR = os.path.join(ROOT, "packaging", "windows")
 PLATFORMS = ("windows", "pythonista", "source")
-DEVELOPMENT_STEP = "01"
+DEVELOPMENT_STEP = "02"
 
 
 def version():

@@ -1,4 +1,4 @@
-YetAnotherStuffApp - portable source/console test package (Step 01)
+YetAnotherStuffApp - portable source/console test package (Step 02)
 
 Extract the complete ZIP and keep main.py next to stuffapp.
 Requires Python 3. No third-party dependencies are required.
@@ -15,7 +15,7 @@ For iPhone/iPad use the Pythonista package and its dedicated instructions.
 By default StuffData is next to main.py. --data overrides STUFFAPP_DATA,
 which overrides the location saved in Settings. Keep independent backups
 before changing a data location or updating. This package contains no data.
-BUILD-INFO.json records the version, Step 01, base commit and file hashes.
+BUILD-INFO.json records the version, Step 02, base commit and file hashes.
 
 Settings has Browse for an inventory folder..., Enter an inventory folder
 path..., Use default folder (StuffData), How to move your inventory... and
@@ -38,3 +38,17 @@ all six folders. Older ZIPs remain readable. Interrupted reset/restore recovers
 before opening the inventory. If blocked, preserve recovery files and restore
 access/free space before retrying; never bypass by deleting journals/staging.
 Read Help > Trash, backups and recovery for scope, limits and safe recovery.
+
+BOX ORDER (0.3.8)
+
+Windows: Sort... above Boxes, or Box > Sort boxes... .
+Pythonista: Home > Sort boxes. Console: Boxes > Sort boxes... .
+Choose item count (most first is the default), name, created or last modified,
+in either direction; Reverse current order flips the current criterion.
+Cancel keeps the current choice. Criterion/direction are saved on this device
+in stuffapp_settings.json, separate from the inventory and its backups.
+Keep that settings file when updating. Box pickers use the same preference.
+Last modified records item/photo edits, deletion, restore and both sides of
+moves; creation dates are preserved. Old unrecorded events cannot be rebuilt.
+Sorting does not change records or exports. See Help > Boxes for details,
+legacy timestamp limits and activity left by an operation that fails.

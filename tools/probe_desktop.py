@@ -9,7 +9,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from stuffapp.desktop import DesktopApp
+from stuffapp import box_order, config
 from stuffapp.storage import Store
+from pathlib import Path
 
 
 def descendants(widget):
@@ -24,6 +26,7 @@ def main():
     errors = []
     messagebox.showinfo = lambda *_args, **_kwargs: None
     store = Store(sys.argv[1])
+    config.SETTINGS_FILE = str(Path(store.root).parent / "interaction-settings.json")
     box = store.create_box("Focus fixture")
     app = DesktopApp(root, store, tk, ttk, filedialog, messagebox, simpledialog)
     root.update()
@@ -103,6 +106,60 @@ def main():
         created = [row for row in store.list_boxes() if row["label"] == "Keyboard box"]
         if len(created) != 1 or created[0]["description"] != "Typed without clicking":
             errors.append("Label > Return > Description > Return did not save the expected box")
+
+        # Real tree rows, retained selection and keyboard-driven sort dialog.
+        full = store.create_box("Z populated")
+        store.create_item("Sort fixture", full["id"])
+        app.refresh()
+        assert app.box_ids[0] == full["id"], "Default is not most items first"
+        app.box_tree.selection_set("box_1")
+        root.update()
+
+        def choose_order(index=None, cancel=False):
+            deadline = time.monotonic() + 3
+
+            def respond_sort():
+                active = next((window for window in windows() if window.title() == "Sort boxes"), None)
+                if active is None or not active.winfo_ismapped():
+                    if time.monotonic() < deadline:
+                        root.after(20, respond_sort)
+                        return
+                    errors.append("Sort dialog did not open")
+                    return
+                listing = next(widget for widget in descendants(active) if isinstance(widget, tk.Listbox))
+                if root.focus_get() != listing:
+                    if time.monotonic() < deadline:
+                        root.after(20, respond_sort)
+                        return
+                    errors.append("Sort dialog does not focus its choices")
+                    active.destroy()
+                    return
+                if not cancel:
+                    listing.selection_clear(0, "end")
+                    listing.selection_set(index)
+                listing.event_generate("<Escape>" if cancel else "<Return>")
+
+                def check_closed():
+                    if active.winfo_exists():
+                        errors.append("Sort dialog ignores " + ("Escape" if cancel else "Return"))
+                        active.destroy()
+                root.after(200, check_closed)
+
+            root.after(20, respond_sort)
+            app.sort_boxes()
+            root.update()
+
+        choose_order(2)  # Name A-Z
+        assert not errors, errors
+        assert [store.get_box(bid)["label"] for bid in app.box_ids] == [
+            "Focus fixture", "Keyboard box", "Z populated"], "Name order is wrong"
+        assert app._selected_box() == full["id"], "Reordering changed the selected box"
+        assert box_order.load_preference() == ("name", False), "Order was not saved"
+        choose_order(cancel=True)
+        assert box_order.load_preference() == ("name", False), "Cancel changed order"
+        choose_order(8)  # Reverse current order
+        assert app.box_ids[0] == full["id"], "Reverse did not refresh tree order"
+        assert box_order.load_preference() == ("name", True), "Reverse was not saved"
         assert not errors, errors
         print("INTERACTIONS_OK")
     finally:

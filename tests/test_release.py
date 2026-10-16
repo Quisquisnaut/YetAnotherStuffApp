@@ -55,7 +55,7 @@ class WindowsReleaseTest(unittest.TestCase):
                 manifest = json.loads(contents.pop("BUILD-INFO.json"))
                 self.assertEqual(manifest["version"], __version__)
                 self.assertEqual(manifest["platform"], platform)
-                self.assertEqual(manifest["step"], "01")
+                self.assertEqual(manifest["step"], "02")
                 self.assertEqual(manifest["build_kind"], "test")
                 self.assertTrue(manifest["source_commit"])
                 self.assertEqual(manifest["files"], {

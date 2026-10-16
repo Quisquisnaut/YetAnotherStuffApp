@@ -23,7 +23,7 @@ import dialogs
 import photos
 import ui
 
-from . import __version__, backup, config, data_location, export, guide, ios_folders
+from . import __version__, backup, box_order, config, data_location, export, guide, ios_folders
 from .app import (KIND_CHOICES, KIND_NAMES, TRASH_DAYS, describe_filters, due_text, hidden_dirs, options_text,
                   reminder_line, startup)
 from .images import pil_to_jpeg_bytes, to_jpeg_bytes
@@ -335,10 +335,13 @@ class HomeScreen(TableScreen):
     def refresh(self):
         store = self.app.store
         items = store.list_items()
-        counts_boxes = store.list_boxes()
+        counts_boxes = box_order.ordered_boxes(store, items=items)
+        by_box = {}
+        for item in items:
+            by_box.setdefault(item.get("box"), []).append(item)
         box_rows = []
         for box in counts_boxes:
-            in_box = [i for i in items if i.get("box") == box["id"]]
+            in_box = by_box.get(box["id"], [])
             box_rows.append({
                 "title": box["label"],
                 "subtitle": count_text(store, in_box) + ("  \u00b7  " + box["description"] if box.get("description") else ""),
@@ -357,6 +360,8 @@ class HomeScreen(TableScreen):
                        % REMINDER_DAYS),
                    "color": DANGER if overdue else None,
                    "on_tap": lambda: self.app.push(RemindersScreen(self.app))}]),
+            ("Box order", [{"title": "Sort boxes", "subtitle": box_order.description(),
+                            "on_tap": self.on_sort}]),
             ("Boxes (%d)" % len(counts_boxes), box_rows),
             ("Add", [
                 {"title": "Create Box", "on_tap": self.app.on_create_box, "accessory": "none", "color": ACCENT},
@@ -383,6 +388,13 @@ class HomeScreen(TableScreen):
 
     def on_add(self, sender):
         self.app.on_add_menu()
+
+    @location_task
+    def on_sort(self):
+        index = choose("Sort boxes", box_order.choice_labels())
+        box_order.apply_choice(index)
+        if index is not None:
+            self.app.refresh_all()
 
 
 class BoxScreen(TableScreen):
@@ -816,7 +828,7 @@ class FilterScreen(TableScreen):
 
     @task
     def on_box(self):
-        boxes = self.app.store.list_boxes()
+        boxes = box_order.ordered_boxes(self.app.store)
         index = choose("Filter by box", ["All boxes"] + [b["label"] for b in boxes])
         if index is not None:
             self.app.filters["box"] = boxes[index - 1]["id"] if index else None
@@ -1427,7 +1439,7 @@ class TouchApp(object):
     # ---------------------------------------------- blocking helpers
     # (call these from @task functions only)
     def pick_box(self, title="Choose a box", exclude=None):
-        boxes = [b for b in self.store.list_boxes() if b["id"] != exclude]
+        boxes = [b for b in box_order.ordered_boxes(self.store) if b["id"] != exclude]
         if not boxes:
             info("No boxes", "Create a box first (Home > Create Box).")
             return None

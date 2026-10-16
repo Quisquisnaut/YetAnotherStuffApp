@@ -1,4 +1,4 @@
-"""App settings (currently: where the data folder is).
+"""Device-local settings: data-folder access and box ordering.
 
 Settings are kept in ``stuffapp_settings.json`` next to ``main.py``. They
 are local to the device, so a phone and a computer can point to the same

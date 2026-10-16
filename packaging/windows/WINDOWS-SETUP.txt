@@ -82,7 +82,21 @@ YetAnotherStuffApp for Windows - quick setup
    Help > Trash, backups and recovery explains archive limits and scope.
 
 This ZIP requires Python. It is not a standalone .exe. Test packages are
-not approved releases. BUILD-INFO.json identifies the version, Step 01,
+not approved releases. BUILD-INFO.json identifies the version, Step 02,
 base commit and SHA-256 file inventory (including uncommitted app changes).
 iCloud folder recognition on iPhone does not establish synchronization
 with Windows. Avoid simultaneous edits on multiple devices.
+
+BOX ORDER (0.3.8)
+
+Windows: Sort... above Boxes, or Box > Sort boxes... .
+Pythonista: Home > Sort boxes. Console: Boxes > Sort boxes... .
+Choose item count (most first is the default), name, created or last modified,
+in either direction; Reverse current order flips the current criterion.
+Cancel keeps the current choice. Criterion/direction are saved on this device
+in stuffapp_settings.json, separate from the inventory and its backups.
+Keep that settings file when updating. Box pickers use the same preference.
+Last modified records item/photo edits, deletion, restore and both sides of
+moves; creation dates are preserved. Old unrecorded events cannot be rebuilt.
+Sorting does not change records or exports. See Help > Boxes for details,
+legacy timestamp limits and activity left by an operation that fails.

@@ -4,7 +4,7 @@ import os
 import webbrowser
 from pathlib import Path
 
-from . import backup, config, data_location, export, guide
+from . import backup, box_order, config, data_location, export, guide
 from .app import KIND_CHOICES, KIND_NAMES, TRASH_DAYS, describe_filters, reminder_line, startup
 from .importer import import_item_file, suggested_box, suggested_type
 from .images import to_jpeg_bytes
@@ -67,17 +67,22 @@ class DesktopApp(object):
         right = ttk.Frame(panes)
         panes.add(left, weight=1)
         panes.add(right, weight=4)
-        left.rowconfigure(1, weight=1)
+        left.rowconfigure(2, weight=1)
         left.columnconfigure(0, weight=1)
-        ttk.Label(left, text="Boxes").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        box_header = ttk.Frame(left)
+        box_header.grid(row=0, column=0, columnspan=2, sticky="ew")
+        ttk.Label(box_header, text="Boxes").pack(side="left")
+        ttk.Button(box_header, text="Sort...", command=lambda: self._call(self.sort_boxes)).pack(side="right")
+        self.box_order_label = ttk.Label(left, text=box_order.description(), wraplength=230)
+        self.box_order_label.grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 4))
         self.box_tree = ttk.Treeview(left, show="tree", selectmode="browse")
-        self.box_tree.grid(row=1, column=0, sticky="nsew")
+        self.box_tree.grid(row=2, column=0, sticky="nsew")
         self.box_tree.bind("<<TreeviewSelect>>", lambda _event: self.refresh_items())
         box_scroll = ttk.Scrollbar(left, orient="vertical", command=self.box_tree.yview)
-        box_scroll.grid(row=1, column=1, sticky="ns")
+        box_scroll.grid(row=2, column=1, sticky="ns")
         self.box_tree.configure(yscrollcommand=box_scroll.set)
         box_actions = ttk.Frame(left)
-        box_actions.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        box_actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         ttk.Button(box_actions, text="Edit box", command=self.edit_box).pack(side="left")
         ttk.Button(box_actions, text="Delete box", command=self.delete_box).pack(side="left", padx=(6, 0))
 
@@ -128,6 +133,7 @@ class DesktopApp(object):
         menu.add_cascade(label="Box", menu=box_menu)
         for label, action in (
                 ("New box", self.create_box), ("Edit box", self.edit_box),
+                ("Sort boxes...", self.sort_boxes),
                 ("Move selected item here", self.move_item_here),
                 ("Export box...", self.export_box), ("Delete box", self.delete_box)):
             box_menu.add_command(label=label, command=lambda action=action: self._call(action))
@@ -196,11 +202,13 @@ class DesktopApp(object):
                 window.destroy()
 
         listing.bind("<Double-1>", accept)
+        listing.bind("<Return>", accept)
+        window.bind("<Escape>", lambda _event: window.destroy())
         footer = ttk.Frame(window, padding=10)
         footer.grid(row=1, column=0, columnspan=2, sticky="e")
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(6, 0))
         ttk.Button(footer, text="Select", command=accept).pack(side="right")
-        listing.focus_set()
+        focus_on_open(window, listing)
         window.wait_window()
         return selected[0]
 
@@ -208,7 +216,7 @@ class DesktopApp(object):
         return ask_text(self.root, title, prompt, initial)
 
     def _choose_box(self, title, boxes=None, include_all=False):
-        boxes = self.store.list_boxes() if boxes is None else boxes
+        boxes = box_order.ordered_boxes(self.store, boxes=boxes)
         labels = (["All boxes"] if include_all else []) + [
             "%s (%s)" % (box["label"], box["id"][:6]) for box in boxes]
         picked = self._choose(title, labels)
@@ -224,12 +232,21 @@ class DesktopApp(object):
             self.box_tree.delete(row)
         self.box_tree.insert("", "end", iid="all", text="All boxes")
         self.box_ids = []
-        for box in self.store.list_boxes():
+        self.box_order_label.configure(text=box_order.description())
+        counts = self.store.box_counts()
+        for box in box_order.ordered_boxes(self.store):
             self.box_ids.append(box["id"])
-            self.box_tree.insert("", "end", iid="box_%d" % len(self.box_ids), text=box["label"])
+            self.box_tree.insert("", "end", iid="box_%d" % len(self.box_ids),
+                                 text="%s (%d items)" % (box["label"], counts.get(box["id"], 0)))
         box_id = next((i + 1 for i, value in enumerate(self.box_ids) if value == selected), 0)
         self.box_tree.selection_set("box_%d" % box_id if box_id else "all")
         self.refresh_items()
+
+    def sort_boxes(self):
+        index = self._choose("Sort boxes", box_order.choice_labels())
+        box_order.apply_choice(index)
+        if index is not None:
+            self.refresh()
 
     def refresh_items(self):
         if not hasattr(self, "item_tree"):
@@ -311,7 +328,7 @@ class DesktopApp(object):
 
     def create_item(self):
         box_id = self._selected_box()
-        boxes = self.store.list_boxes()
+        boxes = box_order.ordered_boxes(self.store)
         if not boxes:
             return self.messagebox.showinfo("Items", "Create a box first.", parent=self.root)
         self._item_dialog(box_id=box_id or boxes[0]["id"])
@@ -330,7 +347,7 @@ class DesktopApp(object):
         window.geometry("620x620")
         window.columnconfigure(0, weight=1)
         window.rowconfigure(1, weight=1)
-        boxes = self.store.list_boxes()
+        boxes = box_order.ordered_boxes(self.store)
         box_ids = [box["id"] for box in boxes]
         box_names = ["%s (%s)" % (box["label"], box["id"][:6]) for box in boxes]
         selected_box_id = item["box"] if item else box_id
@@ -458,7 +475,7 @@ class DesktopApp(object):
         item = self._selected_item()
         if not item:
             return
-        boxes = [box for box in self.store.list_boxes() if box["id"] != item["box"]]
+        boxes = [box for box in box_order.ordered_boxes(self.store) if box["id"] != item["box"]]
         if not boxes:
             return self.messagebox.showinfo("Move item", "There are no other boxes.", parent=self.root)
         box_names = ["%s (%s)" % (box["label"], box["id"][:6]) for box in boxes]
@@ -470,7 +487,7 @@ class DesktopApp(object):
         if box is None:
             return self.messagebox.showerror("Move item", "Choose one of the listed boxes.", parent=self.root)
         self.store.move_item(item["id"], box["id"])
-        self.refresh_items()
+        self.refresh()
 
     def delete_selected(self):
         item = self._selected_item()
@@ -479,7 +496,7 @@ class DesktopApp(object):
         if self.messagebox.askyesno("Delete item", "Move '%s' to the trash?" % item["name"],
                                     parent=self.root):
             self.store.delete_item(item["id"])
-            self.refresh_items()
+            self.refresh()
 
     def clone_selected(self):
         item = self._selected_item()
@@ -513,7 +530,7 @@ class DesktopApp(object):
                 (new_type["name"], ", ".join(lost)), parent=self.root):
             return
         self.store.change_item_type(item["id"], new_type["id"])
-        self.refresh_items()
+        self.refresh()
         self._select_item(item["id"])
 
     def export_selected(self):
@@ -542,7 +559,7 @@ class DesktopApp(object):
         if not box_id or not item:
             return
         self.store.move_item(item["id"], box_id)
-        self.refresh_items()
+        self.refresh()
         self._select_item(item["id"])
 
     def export_results(self):
@@ -584,7 +601,7 @@ class DesktopApp(object):
             value = self._ask("Search filters", label, str(filters.get(key) or ""))
             if value is not None:
                 filters[key] = value or None
-        boxes = self.store.list_boxes()
+        boxes = box_order.ordered_boxes(self.store)
         labels = ["All boxes"] + ["%s (%s)" % (b["label"], b["id"][:6]) for b in boxes]
         selected = self._choose("Filter by box", labels)
         if selected is not None:
@@ -625,7 +642,7 @@ class DesktopApp(object):
             with open(path, "rb") as fh:
                 self.store.add_image_bytes(item["id"], to_jpeg_bytes(fh.read()), name=os.path.basename(path))
         if paths:
-            self.refresh_items()
+            self.refresh()
             self._select_item(item["id"])
 
     def _choose_item(self, title):
@@ -655,6 +672,8 @@ class DesktopApp(object):
             elif action == 1 and self.messagebox.askyesno(
                     "Remove photo", "Delete '%s'?" % filename, parent=self.root):
                 self.store.remove_image(item["id"], filename)
+                self.refresh()
+                self._select_item(item["id"])
 
     def import_item(self):
         path = self.filedialog.askopenfilename(
@@ -697,6 +716,7 @@ class DesktopApp(object):
                 "Open item"])
             if action == 0:
                 self.store.reminder_done(reminder["item"]["id"], reminder["key"])
+                self.refresh()
                 due = self.store.due_reminders()
             elif action == 1:
                 self.refresh_items()
@@ -838,6 +858,7 @@ class DesktopApp(object):
                        for item_type in types]
             index = self._choose("Item types", labels)
             if index is None:
+                self.refresh()
                 return
             if index == 0:
                 self._create_type()

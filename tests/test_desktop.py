@@ -55,7 +55,7 @@ class DesktopFeatureTests(TempStoreTestCase):
         app._selected_item = lambda: self.store.get_item(item["id"])
         app._choose = lambda _title, options: next(
             index for index, label in enumerate(options) if label == item_type["name"])
-        app.refresh_items = lambda: None
+        app.refresh = lambda: None
         app._select_item = lambda _item_id: None
 
         app.change_type()

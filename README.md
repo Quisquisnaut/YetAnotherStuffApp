@@ -67,7 +67,7 @@ python tools/smoke_release.py dist/*.zip --report dist/console-smoke.json
 ```
 
 `--platform windows` is the default. Every ZIP contains `main.py`, `stuffapp/`,
-README, platform instructions and `BUILD-INFO.json` with version, Step 01, base
+README, platform instructions and `BUILD-INFO.json` with version, Step 02, base
 commit and an exact SHA-256 inventory of the packaged working tree. Tests, user
 data, backups, settings, caches and temporary files are excluded.
 
@@ -98,6 +98,16 @@ JSON smoke evidence are retained for 14 days. Local builds default to
 the tag must match the central version. A local test build does not publish anything.
 
 ## Rules
+
+**Box ordering (0.3.8):** use Windows **Sort...** above the box list,
+Pythonista **Home > Sort boxes**, or console **Boxes > Sort boxes...**.
+Sort by item count (most first by default), name, creation or last modified;
+each has both directions and **Reverse current order**. The choice is saved
+on the device and shared with its box pickers. Last modified records item/photo
+changes and both sides of moves; dates survive deletion and trash cleanup.
+Creation dates are preserved. Sorting itself never rewrites inventory files.
+Old unrecorded events cannot be reconstructed; unknown dates go last. See
+Help > Boxes for ties, legacy timezones and operation-failure limits.
 
 * **Every item is always in exactly one box.** You choose the box when you create
   or import an item. You can move an item to another box or delete it, but an

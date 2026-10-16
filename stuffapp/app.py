@@ -6,7 +6,7 @@ same storage, import, export and backup modules.
 
 import os
 
-from . import backup, config, data_location, export, guide
+from . import backup, box_order, config, data_location, export, guide
 from .importer import import_item_file, suggested_box, suggested_type
 from .itemtypes import GENERIC
 from .storage import (EXTRA_KINDS, EXTRA_PREFIX, FIELD_KIND_HINTS, FIELD_KIND_NAMES, FIELD_LABELS, REMINDER_DAYS,
@@ -211,7 +211,7 @@ class App(object):
 
     # ------------------------------------------------------------- helpers
     def pick_box(self, title="Choose a box", exclude=None):
-        boxes = [b for b in self.store.list_boxes() if b["id"] != exclude]
+        boxes = [b for b in box_order.ordered_boxes(self.store) if b["id"] != exclude]
         if not boxes:
             self.ui.message("There are no (other) boxes. Create a box first.")
             return None
@@ -279,9 +279,22 @@ class App(object):
         return box
 
     def boxes_menu(self):
-        box = self.pick_box("Boxes")
-        if box:
-            self.box_menu(box["id"])
+        while True:
+            boxes = box_order.ordered_boxes(self.store)
+            counts = self.store.box_counts()
+            labels = ["%s (%d items)" % (box["label"], counts.get(box["id"], 0)) for box in boxes]
+            labels.append("Sort boxes... (%s)" % box_order.description())
+            index = self.ui.choose("Boxes", labels)
+            if index is None:
+                return
+            if index == len(boxes):
+                self._safe(self.sort_boxes)
+            else:
+                self.box_menu(boxes[index]["id"])
+                return
+
+    def sort_boxes(self):
+        box_order.apply_choice(self.ui.choose("Sort boxes", box_order.choice_labels()))
 
     def box_menu(self, box_id):
         while True:
@@ -716,7 +729,7 @@ class App(object):
         data["with_images"] = data.get("with_images", "").strip().lower() in ("y", "yes")
         for key in ("min_price", "max_price"):
             data[key] = data.get(key) or None
-        boxes = self.store.list_boxes()
+        boxes = box_order.ordered_boxes(self.store)
         index = self.ui.choose("Filter by box", ["All boxes"] + [b["label"] for b in boxes])
         data["box"] = boxes[index - 1]["id"] if index else None
         types = self.store.list_types()
