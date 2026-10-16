@@ -4,7 +4,7 @@
 **Versione:** `0.3.2` → `0.3.5` (percorso manuale `0.3.3`, picker `0.3.4`, copia completa `0.3.5`)\
 **Branch:** `feature/pythonista-data-folder`, checkout originale, senza worktree\
 **Commit base:** `6e64bd3c449d724b00ff3efc6865195424452f9b`\
-**Stato:** APPROVATO — percorso manuale `0.3.3`, picker `0.3.4` e versione finale `0.3.5` confermati funzionanti su iPhone dall'utente. Ricevuto **«Pythonista OK. Go on.»**: autorizzati commit e prosecuzione del workflow concordato, con merge locale prima del push. Chiusura Git in corso.
+**Stato:** APPROVATO e INTEGRATO — percorso manuale `0.3.3`, picker `0.3.4` e versione finale `0.3.5` confermati funzionanti su iPhone dall'utente. Ricevuto **«Pythonista OK. Go on.»**; commit applicativo `5beb87924eebba6e5880c8699e3f960fe77fb190`, merge locale prima del push su `origin/main`. CI Windows/Linux/macOS verde.
 
 Intervento aggiuntivo richiesto dall'utente dopo la chiusura dello Step 0. Il 16 ottobre l'utente ha approvato esplicitamente di anticipare le sole protezioni necessarie alla copia completa dal picker; reset, backup ordinari e restante Step 1 restano separati.
 
@@ -43,6 +43,9 @@ Il contratto nativo segue la [guida Apple all'accesso alle directory](https://de
 | Dati/impostazioni esistenti prima e dopo la suite | **13 file invariati**, fingerprint uguale |
 | Revisione indipendente in sola lettura | Rilievi corretti e confermati risolti; nessun rilievo residuo sul codice |
 | `git diff --check` | Uscita 0 |
+| Controllo prima del commit | 19 sorgenti applicativi e tre ZIP ancora identici alle evidenze verificate; nessuna nuova suite |
+| Merge locale | Fast-forward allo stesso commit `5beb879` del branch; identita verificata e working tree pulito, nessuna suite duplicata |
+| [CI del commit applicativo](https://github.com/Quisquisnaut/YetAnotherStuffApp/actions/runs/38870387745) | **Windows: 241 passati**; Linux/macOS: 240 passati e 1 skip launcher Windows per piattaforma. Build e console smoke verdi su tutti; launcher e GUI Windows verdi |
 
 Ambiente: Windows 10 build 19045, CPython 3.14.7 AMD64. I test usano il vero controller Pythonista con sostituti delle API native/dialoghi, store reali e directory temporanee; i guasti sono simulati ai confini delle risorse interessate. Oltre alle verifiche bookmark/percorso della `0.3.4`, coprono copia completa, destinazioni apparentemente vuote con immagini/tipi/backup/trash/export, sorgente cambiata, disco pieno, interruzione, file estranei nello staging e nella destinazione, alias/link e concorrenza durante copia o conferma. I test dei link sono stati eseguiti sul PC Windows, senza skip.
 
@@ -53,6 +56,7 @@ Evidenze locali, ignorate da Git e non distribuite nell'app:
 - [Log completo dei 241 test, incluso il fallimento ambientale](../../dist/pythonista-data-folder-tests.log).
 - [Ambiente, comandi, risultati e fingerprint](../../dist/pythonista-data-folder-verification.json).
 - [Esito complessivo e comando/risultato del launcher fuori sandbox](../../dist/pythonista-data-folder-overall-verification.json).
+- [Esito CI e controlli dei job](../../dist/pythonista-data-folder-ci.json); [log CI con conteggi test](../../dist/pythonista-data-folder-ci.log).
 - [Script di raccolta delle evidenze](../../dist/verify_pythonista_data_folder.py).
 
 Fingerprint prima/dopo: `2de3261862c3ace884bf48cd16fb36f28f81b853a2cbdd7bda55739a401bbef8`. Include l'inventario principale e i dati/impostazioni delle estrazioni sotto `dist/`. Nessun inventario dell'utente e stato aperto dall'app per i test; i file esistenti sono stati letti soltanto per calcolarne gli hash.
@@ -111,8 +115,10 @@ La `0.3.3` con percorso manuale e il picker della `0.3.4` sono stati confermati 
 - La verifica riguarda nomi, directory e byte; non promette identita di permessi/timestamp/metadati filesystem. La preparazione e la pubblicazione richiedono spazio per due copie aggiuntive nella destinazione; non e un'operazione atomica multi-file per altri programmi che guardano la cartella durante la copia.
 - Errori di permessi, modifiche esterne o terminazione forzata del processo possono lasciare una destinazione parziale/staging da esaminare. La sorgente non viene cancellata e le impostazioni non vengono aggiornate prima della verifica. Non editare le cartelle da altre app durante l'operazione.
 - Nessuna sincronizzazione cloud aggiunta. La nuova protezione riguarda soltanto la copia completa dal picker: i limiti della vecchia `config.copy_data` (Windows/console/scorciatoie) e il reset/backup restano per lo Step 1 separato.
-- CI remota `0.3.5`: da controllare dopo il push autorizzato. La CI verde dello Step 0 riguarda la `0.3.2` e non viene riattribuita alla nuova versione.
+- CI remota `0.3.5` completata con successo sul commit applicativo `5beb879`: [workflow 38870387745](https://github.com/Quisquisnaut/YetAnotherStuffApp/actions/runs/38870387745). Il launcher Windows passa anche nel runner CI ordinario; il fallimento locale resta documentato come limite del sandbox. Job di pubblicazione release saltato.
 
 ## Integrazione
 
-L'utente ha confermato **«Pythonista OK. Go on.»**. In corso: registrazione dell'approvazione, controllo che sorgenti/ZIP siano quelli verificati, commit su `feature/pythonista-data-folder`, merge fast-forward nel `main` locale e solo successivamente push. Nessun worktree, tag o release. La suite non viene ripetuta per modifiche documentali o dopo un fast-forward dello stesso commit; si controllano identita e pulizia. Anticipata soltanto la copia completa dal picker approvata con opzione 2; il resto dello Step 1 resta separato.
+L'utente ha confermato **«Pythonista OK. Go on.»**. Creato il commit applicativo `5beb87924eebba6e5880c8699e3f960fe77fb190` su `feature/pythonista-data-folder`; merge fast-forward nel `main` locale e successivo push su `origin/main` eseguiti in quest'ordine. La CI del commit e verde. Il branch locale viene conservato. Nessun worktree, PR, tag o release.
+
+La registrazione finale degli esiti usa un commit solo documentale con `[skip ci]`, sempre sul branch e poi integrato localmente prima del push. Nessuna suite ripetuta per questa documentazione o per il fast-forward dello stesso commit: controllo di differenze, identita e working tree pulito. Gli ZIP collaudati non vengono rigenerati. Anticipata soltanto la copia completa dal picker approvata con opzione 2; il resto dello Step 1 resta separato.
